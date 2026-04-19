@@ -70,7 +70,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
 
   return (
     <div
-      className="absolute pointer-events-none"
+      className="absolute pointer-events-none cursor-crosshair"
       style={{ left: clampedX - MODULE_WIDTH / 2, top: clampedY }}
     >
       <AnimatePresence>
