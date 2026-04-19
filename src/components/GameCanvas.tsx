@@ -188,53 +188,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }
         }
 
-        // 4. Road/Path
-        cctx.fillStyle = '#0a0d11';
-        PATH.forEach(p => {
-           cctx.beginPath();
-           for(let i=0; i<=16; i++){
-              const a = (i/16) * Math.PI * 2;
-              const px = p.x + Math.cos(a) * roadWidth/2;
-              const py = p.y + Math.sin(a) * roadWidth/2;
-              const pi = toIso(px, py);
-              if (i===0) cctx.moveTo(pi.x, pi.y); else cctx.lineTo(pi.x, pi.y);
-           }
-           cctx.fill();
-        });
-
-        cctx.fillStyle = '#1c2128';
-        cctx.strokeStyle = '#2d333b';
-        for (let i = 0; i < PATH.length - 1; i++) {
-           const p1 = PATH[i]; const p2 = PATH[i+1];
-           const angle = Math.atan2(p2.y-p1.y, p2.x-p1.x);
-           const perpAngle = angle + Math.PI/2;
-           const dx = Math.cos(perpAngle) * roadWidth/2;
-           const dy = Math.sin(perpAngle) * roadWidth/2;
-
-           const q1_t = toIso(p1.x - dx, p1.y - dy, roadHeight);
-           const q2_t = toIso(p2.x - dx, p2.y - dy, roadHeight);
-           const q3_t = toIso(p2.x + dx, p2.y + dy, roadHeight);
-           const q4_t = toIso(p1.x + dx, p1.y + dy, roadHeight);
-
-           cctx.beginPath();
-           cctx.moveTo(q1_t.x, q1_t.y); cctx.lineTo(q2_t.x, q2_t.y); cctx.lineTo(q3_t.x, q3_t.y); cctx.lineTo(q4_t.x, q4_t.y);
-           cctx.closePath(); cctx.fill(); cctx.stroke();
-        }
-
-        PATH.forEach(p => {
-           cctx.beginPath();
-           for(let i=0; i<=16; i++){
-              const a = (i/16) * Math.PI * 2;
-              const pt = toIso(p.x + Math.cos(a) * roadWidth/2, p.y + Math.sin(a) * roadWidth/2, roadHeight);
-              if (i===0) cctx.moveTo(pt.x, pt.y); else cctx.lineTo(pt.x, pt.y);
-           }
-           cctx.closePath(); cctx.fill(); cctx.stroke();
-        });
       }
     }
 
+    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     ctx.save();
-    
+
     // Screen Shake
     if (shakeTime > 0) {
       const intensity = shakeTime * 20;
@@ -318,21 +277,29 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.closePath(); ctx.fill();
     }
 
-    // Joint Cylinders sides
-    ctx.fillStyle = '#0a0d11';
+    // Joint Cylinder sides — front-facing arc from ground to road height
     PATH.forEach(p => {
-       const b = toIso(p.x, p.y);
-       const t = toIso(p.x, p.y, roadHeight);
-       ctx.beginPath();
-       for(let i=0; i<=32; i++){
-          const a = (i/32) * Math.PI * 2;
-          const px = p.x + Math.cos(a) * roadWidth/2;
-          const py = p.y + Math.sin(a) * roadWidth/2;
-          const pi = toIso(px, py);
-          const pit = toIso(px, py, roadHeight);
-          if (i===0) ctx.moveTo(pi.x, pi.y); else ctx.lineTo(pi.x, pi.y);
-       }
-       ctx.fill();
+      const bottomArc: {x: number; y: number}[] = [];
+      const topArc: {x: number; y: number}[] = [];
+      for (let i = 0; i <= 32; i++) {
+        const a = (i / 32) * Math.PI * 2;
+        // Visible in isometric when outward screen-normal Y component > 0
+        if (Math.cos(a) + Math.sin(a) >= 0) {
+          const px = p.x + Math.cos(a) * roadWidth / 2;
+          const py = p.y + Math.sin(a) * roadWidth / 2;
+          bottomArc.push(toIso(px, py));
+          topArc.push(toIso(px, py, roadHeight));
+        }
+      }
+      if (bottomArc.length > 1) {
+        ctx.fillStyle = '#0a0d11';
+        ctx.beginPath();
+        ctx.moveTo(bottomArc[0].x, bottomArc[0].y);
+        for (const pt of bottomArc) ctx.lineTo(pt.x, pt.y);
+        for (let i = topArc.length - 1; i >= 0; i--) ctx.lineTo(topArc[i].x, topArc[i].y);
+        ctx.closePath();
+        ctx.fill();
+      }
     });
 
     // Draw All Path Tops
@@ -357,6 +324,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
        ctx.closePath(); ctx.fill(); ctx.stroke();
 
        // Energy Stream along the path core
+       ctx.save();
        const streamTime = Date.now() / 1500;
        const streamPos = (streamTime + i * 0.2) % 1.0;
        ctx.strokeStyle = 'rgba(0, 242, 255, 0.4)';
@@ -368,6 +336,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
        const s2 = toIso(p1.x + (p2.x-p1.x)*(sEnd), p1.y + (p2.y-p1.y)*(sEnd), roadHeight + 1);
        ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
        ctx.stroke();
+       ctx.restore();
     }
     
     // Path Caps (Joint Tops)
@@ -401,7 +370,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     };
 
     towers.forEach(t => drawShadow(t.x, t.y, 22));
-    enemies.forEach(e => drawShadow(e.x, e.y, 10, true));
 
     // Energy Flow on Path
     const flowTime = Date.now() / 1000;
@@ -418,33 +386,34 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.setLineDash([]);
     ctx.globalAlpha = 1.0;
 
-    // Building Grid (Placement Highlights)
-    ctx.globalAlpha = 0.2;
-    ctx.fillStyle = '#00f2ff';
-    const checkPath = (px: number, py: number) => {
-      for (let i = 0; i < PATH.length - 1; i++) {
-        const p1 = PATH[i]; const p2 = PATH[i + 1];
-        const l2 = (p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2; if (l2 === 0) continue;
-        let t = ((px - p1.x) * (p2.x - p1.x) + (py - p1.y) * (p2.y - p1.y)) / l2;
-        t = Math.max(0, Math.min(1, t));
-        const dx = px - (p1.x + t * (p2.x - p1.x)); const dy = py - (p1.y + t * (p2.y - p1.y));
-        if (Math.sqrt(dx*dx + dy*dy) < 40) return true;
-      }
-      return false;
-    };
-
-    for (let x = step/2; x < CANVAS_WIDTH; x += step) {
-      for (let y = step/2; y < CANVAS_HEIGHT; y += step) {
-        if (!checkPath(x, y)) {
-          const hasTower = towers.some(t => Math.sqrt((t.x - x)**2 + (t.y - y)**2) < 20);
-          if (!hasTower) {
-            const p = toIso(x, y);
-            ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2); ctx.fill();
+    // Building Grid — only visible during placement or relocation
+    if (placingType !== null || relocatingTowerId !== null) {
+      ctx.globalAlpha = 0.2;
+      ctx.fillStyle = '#00f2ff';
+      const checkPath = (px: number, py: number) => {
+        for (let i = 0; i < PATH.length - 1; i++) {
+          const p1 = PATH[i]; const p2 = PATH[i + 1];
+          const l2 = (p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2; if (l2 === 0) continue;
+          let t = ((px - p1.x) * (p2.x - p1.x) + (py - p1.y) * (p2.y - p1.y)) / l2;
+          t = Math.max(0, Math.min(1, t));
+          const dx = px - (p1.x + t * (p2.x - p1.x)); const dy = py - (p1.y + t * (p2.y - p1.y));
+          if (Math.sqrt(dx*dx + dy*dy) < 40) return true;
+        }
+        return false;
+      };
+      for (let x = step/2; x < CANVAS_WIDTH; x += step) {
+        for (let y = step/2; y < CANVAS_HEIGHT; y += step) {
+          if (!checkPath(x, y)) {
+            const hasTower = towers.some(t => Math.sqrt((t.x - x)**2 + (t.y - y)**2) < 20);
+            if (!hasTower) {
+              const p = toIso(x, y);
+              ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2); ctx.fill();
+            }
           }
         }
       }
+      ctx.globalAlpha = 1.0;
     }
-    ctx.globalAlpha = 1.0;
 
     // Draw Towers Range
     if (selectedTowerId) {
@@ -915,8 +884,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     });
 
     const coords = fromIso(sx, sy);
-    setMousePos(coords);
     setHoveredTowerId(hovered?.id || null);
+    if (placingType !== null || relocatingTowerId !== null) {
+      setMousePos(coords);
+    }
   };
 
   return (
