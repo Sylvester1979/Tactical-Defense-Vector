@@ -56,6 +56,10 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 }) => {
   const selectedTower = towers.find(t => t.id === gameState.selectedTowerId);
 
+  const buildDate = new Date(__BUILD_TIME__);
+  const buildLabel = buildDate.toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    + ' ' + buildDate.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' });
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-dark-bg text-text-primary">
       {/* TOP BAR */}
@@ -95,13 +99,17 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           >
             <RotateCcw className="w-3 h-3" /> Restart
           </button>
-          <button 
+          <button
             onClick={onStartWave}
             disabled={gameState.isGameOver}
             className="bg-accent-amber text-dark-bg px-5 py-2 text-xs uppercase font-bold font-mono hover:brightness-110 disabled:grayscale transition-all"
           >
             Initiate Next Wave
           </button>
+          <div className="border-l border-border-dim pl-3 flex flex-col justify-center">
+            <span className="text-[8px] uppercase tracking-widest text-white/20 font-mono">Build</span>
+            <span className="text-[9px] font-mono text-white/30">{buildLabel}</span>
+          </div>
         </div>
       </header>
 
