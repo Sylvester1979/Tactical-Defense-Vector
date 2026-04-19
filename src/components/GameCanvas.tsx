@@ -57,30 +57,48 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     if (strokeStyle) { ctx.strokeStyle = strokeStyle; ctx.lineWidth = lineWidth; ctx.stroke(); }
   };
 
-  const drawPrism = (ctx: CanvasRenderingContext2D, x: number, y: number, z: number, r: number, h: number, sides: number, color: string, topColor: string, alpha: number = 1.0) => {
+  const drawRoundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+  };
+
+  const drawPrism = (ctx: CanvasRenderingContext2D, x: number, y: number, z: number, r: number, h: number, sides: number, color: string, topColor: string, alpha: number = 1.0, edgeColor?: string) => {
     const b = []; const t = [];
     for(let i=0; i<sides; i++){
       const a = (i/sides) * Math.PI*2 + Math.PI/sides;
       b.push(toIso(x + Math.cos(a)*r, y + Math.sin(a)*r, z));
       t.push(toIso(x + Math.cos(a)*r, y + Math.sin(a)*r, z+h));
     }
-    
+
     const oldAlpha = ctx.globalAlpha;
     ctx.globalAlpha = alpha;
     ctx.lineWidth = 1;
-    ctx.strokeStyle = `rgba(0,0,0,${0.3 * alpha})`;
+    ctx.strokeStyle = edgeColor ?? `rgba(0,0,0,${0.3 * alpha})`;
     for(let i=0; i<sides; i++){
        const next = (i+1)%sides;
-       ctx.fillStyle = color;
+       if (color !== 'transparent') ctx.fillStyle = color;
        ctx.beginPath();
        ctx.moveTo(b[i].x, b[i].y); ctx.lineTo(b[next].x, b[next].y);
        ctx.lineTo(t[next].x, t[next].y); ctx.lineTo(t[i].x, t[i].y);
-       ctx.closePath(); ctx.fill(); ctx.stroke();
+       ctx.closePath();
+       if (color !== 'transparent') ctx.fill();
+       ctx.stroke();
     }
-    ctx.fillStyle = topColor;
+    if (topColor !== 'transparent') ctx.fillStyle = topColor;
     ctx.beginPath();
     ctx.moveTo(t[0].x, t[0].y); t.forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.closePath();
+    if (topColor !== 'transparent') ctx.fill();
+    ctx.stroke();
     ctx.globalAlpha = oldAlpha;
   };
 
@@ -613,9 +631,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.save();
           ctx.shadowBlur = 4 * pulseIntensity;
           ctx.shadowColor = stats.color;
-          ctx.strokeStyle = stats.color;
-          ctx.globalAlpha = 0.25 * pulseIntensity;
-          drawPrism(ctx, tower.x, tower.y, towerH * 0.6, baseSize * 0.45, 4, 8, 'transparent', 'transparent');
+          drawPrism(ctx, tower.x, tower.y, towerH * 0.6, baseSize * 0.45, 4, 8, 'transparent', 'transparent', 0.25 * pulseIntensity, stats.color);
           ctx.restore();
         }
         const beamPt1 = toIso(tower.x, tower.y, 6);
@@ -653,8 +669,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.fillStyle = '#1c2128';
         ctx.strokeStyle = '#444c56';
         ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(-8 - recoil, -8, 16, 16, 3);
+        drawRoundRect(ctx, -8 - recoil, -8, 16, 16, 3);
         ctx.fill(); ctx.stroke();
         
         // Internal Glow (Core)
