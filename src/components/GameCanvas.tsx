@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { TowerInstance, EnemyInstance, Projectile, Particle, FloatingText, Point, TowerType } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PATH, TOWER_STATS, ENEMY_TYPES } from '../constants';
 
-import { toIso, fromIso } from '../lib/iso';
+import { toIso, fromIso, ISO_SCALE } from '../lib/iso';
 
 // Helper for hover detection
 const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
@@ -652,13 +652,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         // --- COMPACT TURRET HEAD ---
         ctx.save();
         ctx.translate(topPt.x, topPt.y);
-        
-        // Use logic-provided angle for sync precision
-        let angle = tower.currentAngle || -Math.PI / 2;
-        
+
+        // Convert world-space angle to screen-space angle for isometric projection.
+        // The iso transform maps world direction (dx,dy) → screen (dx-dy)*ISO_SCALE, (dx+dy)*ISO_SCALE*0.5
+        const worldAngle = tower.currentAngle || -Math.PI / 2;
+        const wdx = Math.cos(worldAngle);
+        const wdy = Math.sin(worldAngle);
+        const screenAngle = Math.atan2((wdx + wdy) * ISO_SCALE * 0.5, (wdx - wdy) * ISO_SCALE);
+
         const recoil = Math.max(0, 1 - timeSinceFired * 15) * 5;
 
-        ctx.rotate(angle);
+        ctx.rotate(screenAngle);
         
         // Compact modular head with multiple layers for 2.5D depth
         // Shadow layer (Projected on tower body)

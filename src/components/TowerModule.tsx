@@ -12,7 +12,7 @@ import {
   MoveVertical
 } from 'lucide-react';
 import { TowerInstance, GameState, TowerType } from '../types';
-import { TOWER_STATS, RELOCATION_FEE } from '../constants';
+import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 import { toIso } from '../lib/iso';
 
 interface TowerModuleProps {
@@ -36,8 +36,17 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
 }) => {
   const stats = TOWER_STATS[tower.type];
   const towerH = 40 + tower.level * 2;
-  const screenPos = toIso(tower.x, tower.y, towerH + 15); // Adjust for taller architectural design
+  const screenPos = toIso(tower.x, tower.y, towerH + 15);
   const upgradeCost = Math.floor(stats.cost * 0.7 * tower.level);
+
+  const MODULE_WIDTH = 280;
+  const MODULE_HEIGHT_APPROX = 300;
+  const MARGIN = 8;
+  const clampedX = Math.max(MODULE_WIDTH / 2 + MARGIN, Math.min(CANVAS_WIDTH - MODULE_WIDTH / 2 - MARGIN, screenPos.x));
+  const showBelow = screenPos.y < MODULE_HEIGHT_APPROX + MARGIN;
+  const clampedY = showBelow
+    ? Math.min(screenPos.y, CANVAS_HEIGHT - MODULE_HEIGHT_APPROX - MARGIN)
+    : screenPos.y;
   
   // Specialization Logic
   const isBaseType = [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH].includes(tower.type);
@@ -60,23 +69,32 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   const nextFireRate = stats.fireRate * (1 + tower.level * 0.2);
 
   return (
-    <div 
+    <div
       className="absolute pointer-events-none"
-      style={{ left: screenPos.x, top: screenPos.y }}
+      style={{ left: clampedX, top: clampedY }}
     >
       <AnimatePresence>
         <motion.div
-          initial={{ opacity: 0, scale: 0.8, y: 20 }}
+          initial={{ opacity: 0, scale: 0.8, y: showBelow ? -20 : 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.8, y: 20 }}
+          exit={{ opacity: 0, scale: 0.8, y: showBelow ? -20 : 20 }}
           className="relative pointer-events-auto"
         >
           {/* Connector Line Design */}
-          <div className="absolute w-[2px] h-12 bg-accent-cyan/40 left-1/2 -bottom-12 -translate-x-1/2" />
-          <div className="absolute w-2 h-2 bg-accent-cyan rounded-full left-1/2 -bottom-[50px] -translate-x-1/2 shadow-[0_0_10px_#00f2ff]" />
+          {showBelow ? (
+            <>
+              <div className="absolute w-[2px] h-12 bg-accent-cyan/40 left-1/2 -top-12 -translate-x-1/2" />
+              <div className="absolute w-2 h-2 bg-accent-cyan rounded-full left-1/2 -top-[50px] -translate-x-1/2 shadow-[0_0_10px_#00f2ff]" />
+            </>
+          ) : (
+            <>
+              <div className="absolute w-[2px] h-12 bg-accent-cyan/40 left-1/2 -bottom-12 -translate-x-1/2" />
+              <div className="absolute w-2 h-2 bg-accent-cyan rounded-full left-1/2 -bottom-[50px] -translate-x-1/2 shadow-[0_0_10px_#00f2ff]" />
+            </>
+          )}
 
           {/* Main Container */}
-          <div className="w-[280px] -translate-x-1/2 -translate-y-full mb-12 bg-panel-bg/90 backdrop-blur-xl border border-white/20 rounded-xl overflow-hidden shadow-2xl">
+          <div className={`w-[280px] -translate-x-1/2 ${showBelow ? 'mt-12' : '-translate-y-full mb-12'} bg-panel-bg/90 backdrop-blur-xl border border-white/20 rounded-xl overflow-hidden shadow-2xl`}>
             {/* Header */}
             <header 
               className="p-3 border-b border-white/10 flex items-center justify-between"
