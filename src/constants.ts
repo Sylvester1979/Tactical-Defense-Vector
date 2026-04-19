@@ -1,0 +1,199 @@
+import { TowerType, TowerStats, EnemyType, Point, DamageType } from './types';
+
+export const CANVAS_WIDTH = 1000;
+export const CANVAS_HEIGHT = 800;
+export const INITIAL_MONEY = 400;
+export const INITIAL_LIVES = 20;
+export const RELOCATION_FEE = 40;
+
+export const PATH: Point[] = [
+  { x: 0, y: 100 },
+  { x: 200, y: 100 },
+  { x: 200, y: 300 },
+  { x: 450, y: 300 },
+  { x: 450, y: 100 },
+  { x: 700, y: 100 },
+  { x: 700, y: 500 },
+  { x: 100, y: 500 },
+  { x: 100, y: 600 },
+];
+
+export const TOWER_STATS: Record<TowerType, TowerStats> = {
+  [TowerType.BASIC]: {
+    type: TowerType.BASIC,
+    damageType: DamageType.KINETIC,
+    name: 'Rapid Vulcan',
+    range: 150,
+    damage: 7,
+    fireRate: 2.2,
+    cost: 125,
+    color: '#3b82f6',
+    projectileSpeed: 450,
+  },
+  [TowerType.SNIPER]: {
+    type: TowerType.SNIPER,
+    damageType: DamageType.ENERGY,
+    name: 'Railgun',
+    range: 300,
+    damage: 45,
+    fireRate: 0.35,
+    cost: 250,
+    color: '#8b5cf6',
+    projectileSpeed: 1000,
+  },
+  [TowerType.SPLASH]: {
+    type: TowerType.SPLASH,
+    damageType: DamageType.EXPLOSIVE,
+    name: 'Nova Mortar',
+    range: 120,
+    damage: 18,
+    fireRate: 0.5,
+    cost: 200,
+    color: '#ef4444',
+    projectileSpeed: 250,
+    splashRadius: 65,
+  },
+  [TowerType.VULCAN_TITAN]: {
+    type: TowerType.VULCAN_TITAN,
+    damageType: DamageType.KINETIC,
+    name: 'Titan Vulcan',
+    range: 160,
+    damage: 15,
+    fireRate: 3.5,
+    cost: 300,
+    color: '#60a5fa',
+    projectileSpeed: 500,
+  },
+  [TowerType.VULCAN_STING]: {
+    type: TowerType.VULCAN_STING,
+    damageType: DamageType.KINETIC,
+    name: 'Sting Vulcan',
+    range: 200,
+    damage: 12,
+    fireRate: 5.0,
+    cost: 300,
+    color: '#93c5fd',
+    projectileSpeed: 700,
+  },
+  [TowerType.RAILGUN_PIERCER]: {
+    type: TowerType.RAILGUN_PIERCER,
+    damageType: DamageType.ENERGY,
+    name: 'Piercer Rail',
+    range: 320,
+    damage: 35,
+    fireRate: 0.4,
+    cost: 450,
+    color: '#a855f7',
+    projectileSpeed: 1000,
+    isPiercing: true,
+  },
+  [TowerType.RAILGUN_HYPER]: {
+    type: TowerType.RAILGUN_HYPER,
+    damageType: DamageType.ENERGY,
+    name: 'Hyper Rail',
+    range: 400,
+    damage: 120,
+    fireRate: 0.25,
+    cost: 450,
+    color: '#d8b4fe',
+    projectileSpeed: 1200,
+  },
+  [TowerType.MORTAR_CRYO]: {
+    type: TowerType.MORTAR_CRYO,
+    damageType: DamageType.FROST,
+    name: 'Cryo Mortar',
+    range: 130,
+    damage: 10,
+    fireRate: 0.6,
+    cost: 350,
+    color: '#0ea5e9',
+    projectileSpeed: 300,
+    splashRadius: 80,
+    slowEffect: 0.5,
+  },
+  [TowerType.MORTAR_BOMBER]: {
+    type: TowerType.MORTAR_BOMBER,
+    damageType: DamageType.FIRE,
+    name: 'Heavy Bomber',
+    range: 140,
+    damage: 40,
+    fireRate: 0.35,
+    cost: 350,
+    color: '#f87171',
+    projectileSpeed: 220,
+    splashRadius: 100,
+    burnDamage: 12, // DOT
+    burnDuration: 4,
+  },
+};
+
+export const ENEMY_TYPES: Record<string, EnemyType> = {
+  SCOUT: {
+    name: 'Recon Drone',
+    health: 55,
+    speed: 130,
+    reward: 8,
+    color: '#00f2ff',
+    size: 14,
+    resistances: { [DamageType.KINETIC]: 1.2 }, // Weak to kinetic
+  },
+  INTERCEPTOR: {
+    name: 'Shock Weaver',
+    health: 42,
+    speed: 205,
+    reward: 10,
+    color: '#ffb800',
+    size: 12,
+    resistances: { [DamageType.ENERGY]: 0.5 }, // Strong against energy
+  },
+  GUARDIAN: {
+    name: 'Bastion Mk.I',
+    health: 480,
+    speed: 60,
+    reward: 35,
+    color: '#94a3b8',
+    size: 30,
+    resistances: { [DamageType.EXPLOSIVE]: 0.6, [DamageType.KINETIC]: 0.8 }, // Tanky
+  },
+  PHANTOM: {
+    name: 'Ghost Stalker',
+    health: 170,
+    speed: 155,
+    reward: 20,
+    color: '#c084fc',
+    size: 18,
+    resistances: { [DamageType.FROST]: 1.5 }, // Weak to frost slowing
+  },
+  COLOSSUS: {
+    name: 'Dreadnought',
+    health: 3500,
+    speed: 40,
+    reward: 250,
+    color: '#ef4444',
+    size: 50,
+    resistances: { [DamageType.FIRE]: 1.3, [DamageType.ENERGY]: 1.2 }, // Weak to fire/energy
+  },
+};
+
+export const WAVES = [
+  { count: 12, interval: 1.5, enemyTypes: ['SCOUT'] },
+  { count: 18, interval: 1.0, enemyTypes: ['SCOUT', 'INTERCEPTOR'] },
+  { count: 15, interval: 0.8, enemyTypes: ['INTERCEPTOR'] },
+  { count: 10, interval: 2.2, enemyTypes: ['SCOUT', 'GUARDIAN'] },
+  { count: 20, interval: 1.2, enemyTypes: ['PHANTOM', 'SCOUT'] },
+  { count: 30, interval: 0.7, enemyTypes: ['SCOUT', 'INTERCEPTOR', 'PHANTOM'] },
+  { count: 15, interval: 2.0, enemyTypes: ['GUARDIAN', 'PHANTOM'] },
+  { count: 25, interval: 0.6, enemyTypes: ['INTERCEPTOR', 'PHANTOM'] },
+  { count: 1, interval: 1.0, enemyTypes: ['COLOSSUS'] },
+  { count: 45, interval: 0.5, enemyTypes: ['SCOUT', 'INTERCEPTOR', 'PHANTOM', 'GUARDIAN'] },
+  { count: 15, interval: 2.5, enemyTypes: ['GUARDIAN', 'INTERCEPTOR'] },
+  { count: 35, interval: 0.3, enemyTypes: ['SCOUT'] },
+  { count: 12, interval: 1.5, enemyTypes: ['COLOSSUS', 'SCOUT'] }, // Colossus supported by scouts
+  { count: 50, interval: 0.8, enemyTypes: ['PHANTOM', 'INTERCEPTOR'] },
+  { count: 20, interval: 1.0, enemyTypes: ['GUARDIAN', 'PHANTOM', 'COLOSSUS'] },
+  { count: 100, interval: 0.1, enemyTypes: ['SCOUT', 'INTERCEPTOR'] }, // Swarm
+  { count: 30, interval: 1.2, enemyTypes: ['COLOSSUS', 'GUARDIAN'] },
+  { count: 50, interval: 0.5, enemyTypes: ['PHANTOM', 'GUARDIAN'] },
+  { count: 2, interval: 2.0, enemyTypes: ['COLOSSUS'] },
+  { count: 150, interval: 0.05, enemyTypes: ['INTERCEPTOR', 'PHANTOM'] }, // Final Swarm
+];
