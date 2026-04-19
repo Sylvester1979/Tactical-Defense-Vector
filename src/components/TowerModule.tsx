@@ -71,30 +71,30 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   return (
     <div
       className="absolute pointer-events-none"
-      style={{ left: clampedX, top: clampedY }}
+      style={{ left: clampedX - MODULE_WIDTH / 2, top: clampedY }}
     >
       <AnimatePresence>
         <motion.div
           initial={{ opacity: 0, scale: 0.8, y: showBelow ? -20 : 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.8, y: showBelow ? -20 : 20 }}
-          className="relative pointer-events-auto"
+          className="relative pointer-events-none"
         >
-          {/* Connector Line Design */}
+          {/* Connector Line Design — pointer-events-none so clicks pass through */}
           {showBelow ? (
             <>
-              <div className="absolute w-[2px] h-12 bg-accent-cyan/40 left-1/2 -top-12 -translate-x-1/2" />
-              <div className="absolute w-2 h-2 bg-accent-cyan rounded-full left-1/2 -top-[50px] -translate-x-1/2 shadow-[0_0_10px_#00f2ff]" />
+              <div className="absolute pointer-events-none w-[2px] h-12 bg-accent-cyan/40 left-1/2 -top-12 -translate-x-1/2" />
+              <div className="absolute pointer-events-none w-2 h-2 bg-accent-cyan rounded-full left-1/2 -top-[50px] -translate-x-1/2 shadow-[0_0_10px_#00f2ff]" />
             </>
           ) : (
             <>
-              <div className="absolute w-[2px] h-12 bg-accent-cyan/40 left-1/2 -bottom-12 -translate-x-1/2" />
-              <div className="absolute w-2 h-2 bg-accent-cyan rounded-full left-1/2 -bottom-[50px] -translate-x-1/2 shadow-[0_0_10px_#00f2ff]" />
+              <div className="absolute pointer-events-none w-[2px] h-12 bg-accent-cyan/40 left-1/2 -bottom-12 -translate-x-1/2" />
+              <div className="absolute pointer-events-none w-2 h-2 bg-accent-cyan rounded-full left-1/2 -bottom-[50px] -translate-x-1/2 shadow-[0_0_10px_#00f2ff]" />
             </>
           )}
 
-          {/* Main Container */}
-          <div className={`w-[280px] -translate-x-1/2 ${showBelow ? 'mt-12' : '-translate-y-full mb-12'} bg-panel-bg/90 backdrop-blur-xl border border-white/20 rounded-xl overflow-hidden shadow-2xl`}>
+          {/* Main Container — pointer-events-auto only on the visible panel */}
+          <div className={`w-[280px] pointer-events-auto ${showBelow ? 'mt-12' : '-translate-y-full mb-12'} bg-panel-bg/90 backdrop-blur-xl border border-white/20 rounded-xl overflow-hidden shadow-2xl`}>
             {/* Header */}
             <header 
               className="p-3 border-b border-white/10 flex items-center justify-between"
