@@ -17,7 +17,7 @@ import {
   MoveVertical
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
-import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode } from '../types';
+import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode, DamageType } from '../types';
 import { TOWER_STATS, INITIAL_LIVES, WAVES } from '../constants';
 
 interface UIOverlayProps {
@@ -44,6 +44,14 @@ const MODIFIER_STYLE: Record<WaveModifier, { label: string; color: string; desc:
   [WaveModifier.RUSH]:  { label: 'RUSH',  color: 'text-accent-amber', desc: '2× SPEED' },
   [WaveModifier.SWARM]: { label: 'SWARM', color: 'text-accent-red',   desc: '2× COUNT / ½ HP' },
   [WaveModifier.ELITE]: { label: 'ELITE', color: 'text-purple-400',   desc: '½ COUNT / 2× HP / 1.5× ₢' },
+};
+
+const DMG_STYLE: Record<DamageType, { label: string; cls: string }> = {
+  [DamageType.KINETIC]:   { label: 'KINETIC',   cls: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
+  [DamageType.ENERGY]:    { label: 'ENERGY',    cls: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+  [DamageType.EXPLOSIVE]: { label: 'EXPLOSIVE', cls: 'bg-red-500/20 text-red-300 border-red-500/30' },
+  [DamageType.FROST]:     { label: 'FROST',     cls: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' },
+  [DamageType.FIRE]:      { label: 'FIRE',      cls: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
 };
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
@@ -203,28 +211,65 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 const isAffordable = gameState.money >= stats.cost;
                 const isSelected = placingType === type;
 
+                const dmg = DMG_STYLE[stats.damageType];
+                const TOWER_EMOJI: Partial<Record<TowerType, string>> = {
+                  [TowerType.BASIC]: '🔫', [TowerType.SNIPER]: '🎯', [TowerType.SPLASH]: '💣',
+                  [TowerType.VULCAN_TITAN]: '🔫', [TowerType.VULCAN_STING]: '🔫',
+                  [TowerType.RAILGUN_PIERCER]: '🎯', [TowerType.RAILGUN_HYPER]: '🎯',
+                  [TowerType.MORTAR_CRYO]: '💣', [TowerType.MORTAR_BOMBER]: '💣',
+                };
                 return (
                   <button
                     key={type}
                     onClick={() => setPlacingType(isSelected ? null : type)}
-                    className={`w-full border p-3 flex gap-4 text-left transition-all ${
-                      isSelected ? 'border-accent-cyan bg-accent-cyan/5 ring-1 ring-accent-cyan/20' : 
+                    className={`w-full border p-3 flex gap-3 text-left transition-all group ${
+                      isSelected ? 'border-accent-cyan bg-accent-cyan/5 ring-1 ring-accent-cyan/20' :
                       'border-border-dim bg-white/[0.02] hover:bg-white/[0.05]'
                     } ${!isAffordable && !isSelected ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
                   >
-                    <div className="w-12 h-12 bg-border-dim flex items-center justify-center text-lg">
-                      {type === TowerType.BASIC && '🔫'}
-                      {type === TowerType.SNIPER && '🎯'}
-                      {type === TowerType.SPLASH && '💣'}
+                    <div className="w-10 h-10 shrink-0 bg-border-dim flex items-center justify-center text-base mt-0.5">
+                      {TOWER_EMOJI[type] ?? '🗼'}
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold leading-tight">{stats.name}</p>
-                      <p className="text-[10px] text-text-secondary font-mono mt-0.5">
-                        DMG: {stats.damage} | RNG: {stats.range}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-bold leading-tight truncate">{stats.name}</p>
+                        <span className="text-xs font-bold text-accent-cyan shrink-0">${stats.cost}</span>
+                      </div>
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        <span className={`text-[8px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${dmg.cls}`}>
+                          {dmg.label}
+                        </span>
+                        {stats.splashRadius && (
+                          <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
+                            SPLASH {stats.splashRadius}px
+                          </span>
+                        )}
+                        {stats.isPiercing && (
+                          <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
+                            PIERCE
+                          </span>
+                        )}
+                        {stats.slowEffect && (
+                          <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-cyan-500/10 border-cyan-500/20 text-cyan-400/70">
+                            SLOW {stats.slowEffect * 100}%
+                          </span>
+                        )}
+                        {stats.burnDamage && (
+                          <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-orange-500/10 border-orange-500/20 text-orange-400/70">
+                            BURN {stats.burnDamage}/s
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-white/30 font-mono mt-1.5 leading-relaxed line-clamp-2 group-hover:line-clamp-none transition-all">
+                        {stats.description}
                       </p>
-                      <span className="text-xs font-bold text-accent-cyan mt-1 block">
-                        ${stats.cost}
-                      </span>
+                      <p className="text-[9px] text-text-secondary font-mono mt-1">
+                        DMG <span className="text-white/60">{stats.damage}</span>
+                        <span className="mx-1 opacity-30">·</span>
+                        RNG <span className="text-white/60">{stats.range}</span>
+                        <span className="mx-1 opacity-30">·</span>
+                        ROF <span className="text-white/60">{stats.fireRate}/s</span>
+                      </p>
                     </div>
                   </button>
                 );
