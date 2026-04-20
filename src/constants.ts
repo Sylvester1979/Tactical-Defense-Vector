@@ -1,4 +1,4 @@
-import { TowerType, TowerStats, EnemyType, Point, DamageType } from './types';
+import { TowerType, TowerStats, EnemyType, Point, DamageType, WaveModifier } from './types';
 
 export const CANVAS_WIDTH = 1000;
 export const CANVAS_HEIGHT = 800;
@@ -178,22 +178,22 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
 export const WAVES = [
   { count: 12, interval: 1.5, enemyTypes: ['SCOUT'] },
   { count: 18, interval: 1.0, enemyTypes: ['SCOUT', 'INTERCEPTOR'] },
-  { count: 15, interval: 0.8, enemyTypes: ['INTERCEPTOR'] },
+  { count: 15, interval: 0.8, enemyTypes: ['INTERCEPTOR'], modifier: WaveModifier.RUSH },
   { count: 10, interval: 2.2, enemyTypes: ['SCOUT', 'GUARDIAN'] },
   { count: 20, interval: 1.2, enemyTypes: ['PHANTOM', 'SCOUT'] },
-  { count: 30, interval: 0.7, enemyTypes: ['SCOUT', 'INTERCEPTOR', 'PHANTOM'] },
-  { count: 15, interval: 2.0, enemyTypes: ['GUARDIAN', 'PHANTOM'] },
+  { count: 30, interval: 0.7, enemyTypes: ['SCOUT', 'INTERCEPTOR', 'PHANTOM'], modifier: WaveModifier.SWARM },
+  { count: 15, interval: 2.0, enemyTypes: ['GUARDIAN', 'PHANTOM'], modifier: WaveModifier.ELITE },
   { count: 25, interval: 0.6, enemyTypes: ['INTERCEPTOR', 'PHANTOM'] },
-  { count: 1, interval: 1.0, enemyTypes: ['COLOSSUS'] },
+  { count: 1,  interval: 1.0, enemyTypes: ['COLOSSUS'], modifier: WaveModifier.ELITE },
   { count: 45, interval: 0.5, enemyTypes: ['SCOUT', 'INTERCEPTOR', 'PHANTOM', 'GUARDIAN'] },
   { count: 15, interval: 2.5, enemyTypes: ['GUARDIAN', 'INTERCEPTOR'] },
-  { count: 35, interval: 0.3, enemyTypes: ['SCOUT'] },
-  { count: 12, interval: 1.5, enemyTypes: ['COLOSSUS', 'SCOUT'] }, // Colossus supported by scouts
-  { count: 50, interval: 0.8, enemyTypes: ['PHANTOM', 'INTERCEPTOR'] },
-  { count: 20, interval: 1.0, enemyTypes: ['GUARDIAN', 'PHANTOM', 'COLOSSUS'] },
-  { count: 100, interval: 0.1, enemyTypes: ['SCOUT', 'INTERCEPTOR'] }, // Swarm
-  { count: 30, interval: 1.2, enemyTypes: ['COLOSSUS', 'GUARDIAN'] },
+  { count: 35, interval: 0.3, enemyTypes: ['SCOUT'], modifier: WaveModifier.SWARM },
+  { count: 12, interval: 1.5, enemyTypes: ['COLOSSUS', 'SCOUT'], modifier: WaveModifier.ELITE },
+  { count: 50, interval: 0.8, enemyTypes: ['PHANTOM', 'INTERCEPTOR'], modifier: WaveModifier.RUSH },
+  { count: 20, interval: 1.0, enemyTypes: ['GUARDIAN', 'PHANTOM', 'COLOSSUS'], modifier: WaveModifier.ELITE },
+  { count: 100, interval: 0.1, enemyTypes: ['SCOUT', 'INTERCEPTOR'], modifier: WaveModifier.SWARM },
+  { count: 30, interval: 1.2, enemyTypes: ['COLOSSUS', 'GUARDIAN'], modifier: WaveModifier.ELITE },
   { count: 50, interval: 0.5, enemyTypes: ['PHANTOM', 'GUARDIAN'] },
-  { count: 2, interval: 2.0, enemyTypes: ['COLOSSUS'] },
-  { count: 150, interval: 0.05, enemyTypes: ['INTERCEPTOR', 'PHANTOM'] }, // Final Swarm
+  { count: 2,  interval: 2.0, enemyTypes: ['COLOSSUS'], modifier: WaveModifier.ELITE },
+  { count: 150, interval: 0.05, enemyTypes: ['INTERCEPTOR', 'PHANTOM'], modifier: WaveModifier.RUSH },
 ];

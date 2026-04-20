@@ -11,7 +11,7 @@ import {
   Unplug,
   MoveVertical
 } from 'lucide-react';
-import { TowerInstance, GameState, TowerType } from '../types';
+import { TowerInstance, GameState, TowerType, TargetingMode } from '../types';
 import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 import { toIso } from '../lib/iso';
 
@@ -22,8 +22,17 @@ interface TowerModuleProps {
   onSpecialize: (id: string, type: TowerType) => void;
   onSell: (id: string) => void;
   onStartRelocation: (id: string) => void;
+  onSetTargetingMode: (id: string, mode: TargetingMode) => void;
   onClose: () => void;
 }
+
+const TARGETING_LABELS: Record<TargetingMode, string> = {
+  [TargetingMode.FIRST]:    'FIRST',
+  [TargetingMode.LAST]:     'LAST',
+  [TargetingMode.STRONGEST]:'STRONG',
+  [TargetingMode.WEAKEST]:  'WEAK',
+  [TargetingMode.CLOSEST]:  'NEAR',
+};
 
 export const TowerModule: React.FC<TowerModuleProps> = ({
   tower,
@@ -32,6 +41,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   onSpecialize,
   onSell,
   onStartRelocation,
+  onSetTargetingMode,
   onClose
 }) => {
   const stats = TOWER_STATS[tower.type];
@@ -137,6 +147,26 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                     <span className="text-sm font-bold text-accent-cyan">{(stats.range * (1 + (tower.level - 1) * 0.1)).toFixed(0)}</span>
                     <span className="text-white/20">→ {nextRange.toFixed(0)}</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Targeting Mode */}
+              <div className="space-y-1">
+                <div className="text-[8px] uppercase tracking-tighter text-white/40">Target Priority</div>
+                <div className="flex gap-1">
+                  {(Object.values(TargetingMode) as TargetingMode[]).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => onSetTargetingMode(tower.id, mode)}
+                      className={`flex-1 py-1 rounded text-[8px] font-mono uppercase transition-all ${
+                        tower.targetingMode === mode
+                          ? 'bg-accent-cyan text-dark-bg font-black'
+                          : 'bg-white/5 border border-white/10 text-white/40 hover:text-white/80 hover:bg-white/10'
+                      }`}
+                    >
+                      {TARGETING_LABELS[mode]}
+                    </button>
+                  ))}
                 </div>
               </div>
 
