@@ -46,6 +46,7 @@ export interface TowerStats {
   color: string;
   name: string;
   projectileSpeed: number;
+  description: string;
   splashRadius?: number;
   isPiercing?: boolean;
   slowEffect?: number; // 0 to 1, percentage reduction

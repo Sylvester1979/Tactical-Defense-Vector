@@ -11,7 +11,7 @@ import {
   Unplug,
   MoveVertical
 } from 'lucide-react';
-import { TowerInstance, GameState, TowerType, TargetingMode } from '../types';
+import { TowerInstance, GameState, TowerType, TargetingMode, DamageType } from '../types';
 import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 import { toIso } from '../lib/iso';
 
@@ -25,6 +25,14 @@ interface TowerModuleProps {
   onSetTargetingMode: (id: string, mode: TargetingMode) => void;
   onClose: () => void;
 }
+
+const DMG_STYLE: Record<DamageType, { label: string; cls: string }> = {
+  [DamageType.KINETIC]:   { label: 'KINETIC',   cls: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
+  [DamageType.ENERGY]:    { label: 'ENERGY',    cls: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+  [DamageType.EXPLOSIVE]: { label: 'EXPLOSIVE', cls: 'bg-red-500/20 text-red-300 border-red-500/30' },
+  [DamageType.FROST]:     { label: 'FROST',     cls: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' },
+  [DamageType.FIRE]:      { label: 'FIRE',      cls: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
+};
 
 const TARGETING_LABELS: Record<TargetingMode, string> = {
   [TargetingMode.FIRST]:    'FIRST',
@@ -126,6 +134,36 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
 
             {/* Content */}
             <div className="p-4 space-y-4">
+              {/* Weapon Profile */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className={`text-[8px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${DMG_STYLE[stats.damageType].cls}`}>
+                    {DMG_STYLE[stats.damageType].label}
+                  </span>
+                  {stats.splashRadius && (
+                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
+                      SPLASH {stats.splashRadius}px
+                    </span>
+                  )}
+                  {stats.isPiercing && (
+                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
+                      PIERCE
+                    </span>
+                  )}
+                  {stats.slowEffect && (
+                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-cyan-500/10 border-cyan-500/20 text-cyan-400/70">
+                      SLOW {stats.slowEffect * 100}%
+                    </span>
+                  )}
+                  {stats.burnDamage && (
+                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-orange-500/10 border-orange-500/20 text-orange-400/70">
+                      BURN {stats.burnDamage}/s·{stats.burnDuration}s
+                    </span>
+                  )}
+                </div>
+                <p className="text-[9px] text-white/40 font-mono leading-relaxed">{stats.description}</p>
+              </div>
+
               {/* Stats Grid */}
               <div className="grid grid-cols-2 gap-2 text-[9px] font-mono">
                 <div className="bg-black/40 p-2 rounded border border-white/5 space-y-1">
