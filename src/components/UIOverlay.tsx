@@ -54,6 +54,15 @@ const DMG_STYLE: Record<DamageType, { label: string; cls: string }> = {
   [DamageType.FIRE]:      { label: 'FIRE',      cls: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
 };
 
+const MODIFIER_HEX: Record<WaveModifier, string> = {
+  [WaveModifier.NONE]:  '#8b949e',
+  [WaveModifier.RUSH]:  '#ffb800',
+  [WaveModifier.SWARM]: '#ef4444',
+  [WaveModifier.ELITE]: '#c084fc',
+};
+
+const BASE_TOWER_TYPES = [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH] as const;
+
 export const UIOverlay: React.FC<UIOverlayProps> = ({
   gameState,
   towers,
@@ -77,36 +86,143 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   const buildLabel = buildDate.toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     + ' ' + buildDate.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' });
 
+  // --- Live log feed ---
+  const [logEntries, setLogEntries] = React.useState<{id: number; time: string; text: string; color: string}[]>([
+    { id: 0, time: '00:00', text: 'Defense matrix online.', color: '#00f2ff' },
+    { id: 1, time: '00:00', text: 'Integrity nominal. Standby.', color: '#8b949e' },
+  ]);
+  const logRef = React.useRef<HTMLDivElement>(null);
+  const logIdRef = React.useRef(2);
+  const prevWaveRef = React.useRef(gameState.waveNumber);
+  const prevLivesRef = React.useRef(gameState.lives);
+  const prevWaveReadyRef = React.useRef(gameState.isWaveReady);
+
+  const addLog = React.useCallback((text: string, color: string) => {
+    const now = new Date();
+    const time = `${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+    setLogEntries(prev => [...prev.slice(-29), { id: logIdRef.current++, time, text, color }]);
+  }, []);
+
+  React.useEffect(() => {
+    if (gameState.waveNumber !== prevWaveRef.current && gameState.waveNumber > 0) {
+      addLog(`Wave ${gameState.waveNumber} ingress confirmed.`, '#ffb800');
+      if (gameState.currentWaveModifier !== WaveModifier.NONE) {
+        const m = MODIFIER_STYLE[gameState.currentWaveModifier];
+        addLog(`Threat modifier: ${m.label} — ${m.desc}`, MODIFIER_HEX[gameState.currentWaveModifier]);
+      }
+    }
+    prevWaveRef.current = gameState.waveNumber;
+  }, [gameState.waveNumber, gameState.currentWaveModifier, addLog]);
+
+  React.useEffect(() => {
+    if (gameState.lives < prevLivesRef.current) {
+      const lost = prevLivesRef.current - gameState.lives;
+      addLog(`Core breach! −${lost} integrity unit${lost > 1 ? 's' : ''}.`, '#ef4444');
+      if (gameState.lives <= 5) addLog('CRITICAL: Core integrity failing!', '#ef4444');
+    }
+    prevLivesRef.current = gameState.lives;
+  }, [gameState.lives, addLog]);
+
+  React.useEffect(() => {
+    if (gameState.isWaveReady && !prevWaveReadyRef.current && gameState.waveNumber > 0) {
+      addLog(`Wave ${gameState.waveNumber} neutralized. Standby.`, '#10b981');
+    }
+    prevWaveReadyRef.current = gameState.isWaveReady;
+  }, [gameState.isWaveReady, addLog]);
+
+  React.useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [logEntries]);
+
+  // Tower breakdown by base type
+  const towerBreakdown = BASE_TOWER_TYPES.map(base => ({
+    base,
+    icon: base === TowerType.BASIC ? '🔫' : base === TowerType.SNIPER ? '🎯' : '💣',
+    label: base === TowerType.BASIC ? 'Vulcan' : base === TowerType.SNIPER ? 'Rail' : 'Mortar',
+    count: towers.filter(t => t.baseType === base).length,
+    color: TOWER_STATS[base].color,
+  }));
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-dark-bg text-text-primary">
       {/* TOP BAR */}
       <header className="h-[60px] bg-panel-bg border-b-2 border-border-dim flex items-center px-6 justify-between shrink-0">
-        <div className="flex gap-8">
+        <div className="flex items-center gap-6">
+          {/* Credits */}
           <div className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-wider text-text-secondary font-mono flex items-center gap-1">
+            <span className="text-[9px] uppercase tracking-wider text-text-secondary font-mono flex items-center gap-1">
               <CreditCard className="w-3 h-3" /> Credits
             </span>
-            <span className="text-xl font-bold font-mono text-accent-cyan">${gameState.money.toLocaleString()}</span>
+            <span className="text-xl font-bold font-mono text-accent-cyan drop-shadow-[0_0_8px_rgba(0,242,255,0.5)]">
+              ${gameState.money.toLocaleString()}
+            </span>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-wider text-text-secondary font-mono flex items-center gap-1">
+
+          <div className="w-px h-8 bg-border-dim" />
+
+          {/* Core Integrity — segmented bar */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[9px] uppercase tracking-wider text-text-secondary font-mono flex items-center gap-1">
               <Shield className="w-3 h-3" /> Core Integrity
             </span>
-            <span className="text-xl font-bold font-mono text-accent-red">{gameState.lives}/{INITIAL_LIVES}</span>
+            <div className="flex items-center gap-2">
+              <span className={`text-sm font-bold font-mono w-6 tabular-nums ${
+                gameState.lives > 10 ? 'text-accent-cyan' : gameState.lives > 5 ? 'text-accent-amber' : 'text-accent-red'
+              }`}>{gameState.lives}</span>
+              <div className="flex gap-[2px]">
+                {Array.from({ length: INITIAL_LIVES }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-[6px] h-[14px] rounded-[2px] transition-all duration-300 ${
+                      i < gameState.lives
+                        ? gameState.lives > 10
+                          ? 'bg-accent-cyan shadow-[0_0_4px_rgba(0,242,255,0.6)]'
+                          : gameState.lives > 5
+                            ? 'bg-accent-amber shadow-[0_0_4px_rgba(255,184,0,0.6)]'
+                            : 'bg-accent-red shadow-[0_0_4px_rgba(239,68,68,0.8)] animate-pulse'
+                        : 'bg-white/10'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-wider text-text-secondary font-mono flex items-center gap-1">
-              <Activity className="w-3 h-3" /> Wave Progress
+
+          <div className="w-px h-8 bg-border-dim" />
+
+          {/* Wave Progress — segmented bar */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[9px] uppercase tracking-wider text-text-secondary font-mono flex items-center gap-1">
+              <Activity className="w-3 h-3" /> Wave
             </span>
-            <span className="text-xl font-bold font-mono text-accent-amber">{gameState.waveNumber.toString().padStart(2, '0')}/{WAVES.length}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold font-mono text-accent-amber tabular-nums">
+                {gameState.waveNumber.toString().padStart(2, '0')}<span className="text-white/20 text-xs">/{WAVES.length}</span>
+              </span>
+              <div className="flex gap-[2px]">
+                {Array.from({ length: WAVES.length }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-[5px] h-[14px] rounded-[2px] transition-all duration-500 ${
+                      i < gameState.waveNumber ? 'bg-accent-amber shadow-[0_0_3px_rgba(255,184,0,0.5)]' : 'bg-white/10'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
+
+          {/* Wave modifier badge */}
           {gameState.currentWaveModifier !== WaveModifier.NONE && (() => {
             const m = MODIFIER_STYLE[gameState.currentWaveModifier];
+            const borderCls = gameState.currentWaveModifier === WaveModifier.RUSH ? 'border-accent-amber/50 bg-accent-amber/5'
+              : gameState.currentWaveModifier === WaveModifier.SWARM ? 'border-accent-red/50 bg-accent-red/5'
+              : 'border-purple-400/50 bg-purple-400/5';
             return (
-              <div className="flex flex-col justify-center">
-                <span className="text-[8px] uppercase tracking-wider text-text-secondary font-mono">Threat Mode</span>
+              <div className={`flex flex-col justify-center px-3 py-1 border rounded ${borderCls}`}>
+                <span className={`text-[8px] uppercase tracking-wider font-mono text-white/40`}>Threat Mode</span>
                 <span className={`text-sm font-black font-mono ${m.color} animate-pulse`}>{m.label}</span>
-                <span className={`text-[8px] font-mono ${m.color} opacity-70`}>{m.desc}</span>
+                <span className={`text-[8px] font-mono ${m.color} opacity-60`}>{m.desc}</span>
               </div>
             );
           })()}
@@ -206,7 +322,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               Arsenal Selection
             </h2>
             <div className="space-y-3">
-              {Object.values(TowerType).map(type => {
+              {BASE_TOWER_TYPES.map(type => {
                 const stats = TOWER_STATS[type];
                 const isAffordable = gameState.money >= stats.cost;
                 const isSelected = placingType === type;
@@ -214,9 +330,6 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 const dmg = DMG_STYLE[stats.damageType];
                 const TOWER_EMOJI: Partial<Record<TowerType, string>> = {
                   [TowerType.BASIC]: '🔫', [TowerType.SNIPER]: '🎯', [TowerType.SPLASH]: '💣',
-                  [TowerType.VULCAN_TITAN]: '🔫', [TowerType.VULCAN_STING]: '🔫',
-                  [TowerType.RAILGUN_PIERCER]: '🎯', [TowerType.RAILGUN_HYPER]: '🎯',
-                  [TowerType.MORTAR_CRYO]: '💣', [TowerType.MORTAR_BOMBER]: '💣',
                 };
                 return (
                   <button
@@ -277,36 +390,85 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             </div>
           </div>
 
-          {/* UNIT STATUS - MOVED TO IN-GAME MODULE */}
-          <div className="flex-1 flex flex-col border border-border-dim p-5 bg-black/20 overflow-hidden relative group">
-             <div className="absolute inset-0 bg-gradient-to-br from-accent-cyan/5 to-transparent pointer-events-none" />
-             <div className="relative z-10 flex flex-col h-full">
-                <h2 className="text-[11px] font-black uppercase tracking-widest text-text-secondary border-b border-border-dim pb-2 mb-4 flex items-center justify-between">
-                  <span className="flex items-center gap-2"><Layers className="w-3 h-3" /> System Diagnostics</span>
-                  <Activity className="w-3 h-3 animate-pulse text-accent-cyan" />
-                </h2>
-                <div className="flex-1 flex flex-col items-center justify-center opacity-40 text-center space-y-4">
-                   <div className="w-16 h-16 border border-border-dim rounded-full flex items-center justify-center animate-[spin_10s_linear_infinite]">
-                      <Cpu className="w-8 h-8" />
-                   </div>
-                   <div>
-                      <p className="text-[10px] uppercase font-mono tracking-widest text-accent-cyan">Neural Link Ready</p>
-                      <p className="text-[9px] text-text-secondary mt-1">Select a defensive unit on the map for manual override and biological feedback.</p>
-                   </div>
+          {/* BATTLEFIELD INTEL */}
+          <div className="flex flex-col border border-border-dim bg-black/20 overflow-hidden relative">
+            <div className="absolute inset-0 bg-gradient-to-br from-accent-cyan/3 to-transparent pointer-events-none" />
+            <div className="relative z-10 flex flex-col">
+              <h2 className="text-[11px] font-black uppercase tracking-widest text-text-secondary border-b border-border-dim px-4 py-2.5 flex items-center justify-between">
+                <span className="flex items-center gap-2"><Layers className="w-3 h-3" /> Battlefield Intel</span>
+                <Activity className="w-3 h-3 animate-pulse text-accent-cyan" />
+              </h2>
+
+              {/* Stats 2×2 grid */}
+              <div className="grid grid-cols-2 gap-px bg-border-dim border-b border-border-dim">
+                {[
+                  { label: 'Deployed', value: towers.length.toString(), color: 'text-accent-cyan', icon: <Cpu className="w-3 h-3" /> },
+                  { label: 'Wave', value: gameState.isWaveReady ? 'STANDBY' : 'ACTIVE', color: gameState.isWaveReady ? 'text-white/50' : 'text-accent-red', pulse: !gameState.isWaveReady, icon: <Activity className="w-3 h-3" /> },
+                  { label: 'Wave Bonus', value: `$${100 + gameState.waveNumber * 20}`, color: 'text-accent-amber', icon: <CreditCard className="w-3 h-3" /> },
+                  { label: 'Integrity', value: `${Math.round((gameState.lives / INITIAL_LIVES) * 100)}%`, color: gameState.lives > 10 ? 'text-accent-cyan' : gameState.lives > 5 ? 'text-accent-amber' : 'text-accent-red', pulse: gameState.lives <= 5, icon: <Shield className="w-3 h-3" /> },
+                ].map(({ label, value, color, pulse, icon }) => (
+                  <div key={label} className="bg-black/30 px-3 py-2 flex flex-col gap-0.5">
+                    <span className="text-[8px] uppercase tracking-wider text-white/30 font-mono flex items-center gap-1">{icon}{label}</span>
+                    <span className={`text-sm font-black font-mono ${color} ${pulse ? 'animate-pulse' : ''}`}>{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tower type breakdown */}
+              <div className="px-4 py-3 space-y-2 border-b border-border-dim">
+                <span className="text-[8px] uppercase tracking-widest text-white/30 font-mono">Defense Grid</span>
+                {towerBreakdown.map(({ base, icon, label, count, color }) => (
+                  <div key={base} className="flex items-center gap-2">
+                    <span className="text-sm w-4 text-center leading-none">{icon}</span>
+                    <span className="text-[9px] font-mono text-white/50 w-12">{label}</span>
+                    <div className="flex-1 flex gap-0.5 h-2">
+                      {Array.from({ length: Math.max(count, 1) }).map((_, i) => (
+                        <div key={i} className="flex-1 rounded-full" style={{ backgroundColor: i < count ? color : 'rgba(255,255,255,0.05)', opacity: i < count ? 0.7 : 1 }} />
+                      ))}
+                    </div>
+                    <span className="text-[9px] font-mono text-white/40 w-3 text-right">{count}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Active modifier strip */}
+              {gameState.currentWaveModifier !== WaveModifier.NONE && (() => {
+                const m = MODIFIER_STYLE[gameState.currentWaveModifier];
+                const hex = MODIFIER_HEX[gameState.currentWaveModifier];
+                return (
+                  <div className="px-4 py-2 flex items-center gap-2" style={{ backgroundColor: `${hex}10`, borderTop: `1px solid ${hex}30` }}>
+                    <Zap className="w-3 h-3 shrink-0" style={{ color: hex }} />
+                    <span className="text-[9px] font-black font-mono uppercase" style={{ color: hex }}>{m.label}</span>
+                    <span className="text-[8px] font-mono opacity-60 ml-auto" style={{ color: hex }}>{m.desc}</span>
+                  </div>
+                );
+              })()}
+
+              {/* Neural link hint when nothing selected */}
+              {!selectedTower && (
+                <div className="px-4 py-3 flex items-center gap-3 opacity-30">
+                  <Cpu className="w-4 h-4 shrink-0 animate-[spin_8s_linear_infinite]" />
+                  <p className="text-[9px] text-text-secondary font-mono leading-relaxed">Select a unit on the map to inspect and control it.</p>
                 </div>
-             </div>
+              )}
+            </div>
           </div>
 
-          {/* LOG AREA */}
-          <div className="h-[120px] bg-black border border-border-dim p-3 font-mono text-[10px] text-text-secondary overflow-hidden flex flex-col gap-1">
-            <p className="flex items-center gap-2 text-accent-cyan border-b border-border-dim pb-1 mb-1 opacity-80">
-              <Terminal className="w-3 h-3" /> System Feed
-            </p>
-            <p className="animate-pulse">{'>'} Defense matrix online.</p>
-            <p className="">{'>'} Integrity stable: All clear.</p>
-            {gameState.waveNumber > 0 && <p className="text-accent-amber">{'>'} Wave {gameState.waveNumber} ingress detected.</p>}
-            {selectedTower && <p className="text-accent-cyan">{'>'} Focus unit: {TOWER_STATS[selectedTower.type].name}.</p>}
-            {gameState.lives < 10 && <p className="text-accent-red animate-bounce">{'>'} WARNING: CORE INTEGRITY CRITICAL</p>}
+          {/* SYSTEM FEED — scrolling log */}
+          <div className="h-[130px] bg-black border border-border-dim flex flex-col shrink-0">
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border-dim text-accent-cyan opacity-80">
+              <Terminal className="w-3 h-3 shrink-0" />
+              <span className="text-[9px] font-black uppercase tracking-widest font-mono">System Feed</span>
+              <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-cyan animate-pulse" />
+            </div>
+            <div ref={logRef} className="flex-1 overflow-y-auto px-3 py-1.5 space-y-0.5 scrollbar-none">
+              {logEntries.map(entry => (
+                <div key={entry.id} className="flex gap-2 items-baseline font-mono text-[9px] leading-relaxed">
+                  <span className="text-white/20 shrink-0 tabular-nums">{entry.time}</span>
+                  <span style={{ color: entry.color }}>{'>'} {entry.text}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </aside>
       </main>
