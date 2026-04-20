@@ -17,7 +17,7 @@ import {
   MoveVertical
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
-import { GameState, TowerType, TowerInstance } from '../types';
+import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode } from '../types';
 import { TOWER_STATS, INITIAL_LIVES, WAVES } from '../constants';
 
 interface UIOverlayProps {
@@ -33,10 +33,18 @@ interface UIOverlayProps {
   onStartRelocation: (id: string) => void;
   onCancelRelocation: () => void;
   onSelectTower: (id: string | null) => void;
+  onSetTargetingMode: (id: string, mode: TargetingMode) => void;
   placingType: TowerType | null;
   setPlacingType: (type: TowerType | null) => void;
   renderCanvas: React.ReactNode;
 }
+
+const MODIFIER_STYLE: Record<WaveModifier, { label: string; color: string; desc: string }> = {
+  [WaveModifier.NONE]:  { label: '',      color: '',                desc: '' },
+  [WaveModifier.RUSH]:  { label: 'RUSH',  color: 'text-accent-amber', desc: '2× SPEED' },
+  [WaveModifier.SWARM]: { label: 'SWARM', color: 'text-accent-red',   desc: '2× COUNT / ½ HP' },
+  [WaveModifier.ELITE]: { label: 'ELITE', color: 'text-purple-400',   desc: '½ COUNT / 2× HP / 1.5× ₢' },
+};
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
   gameState,
@@ -50,6 +58,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onStartRelocation,
   onCancelRelocation,
   onSelectTower,
+  onSetTargetingMode,
   placingType,
   setPlacingType,
   renderCanvas
@@ -83,6 +92,16 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             </span>
             <span className="text-xl font-bold font-mono text-accent-amber">{gameState.waveNumber.toString().padStart(2, '0')}/{WAVES.length}</span>
           </div>
+          {gameState.currentWaveModifier !== WaveModifier.NONE && (() => {
+            const m = MODIFIER_STYLE[gameState.currentWaveModifier];
+            return (
+              <div className="flex flex-col justify-center">
+                <span className="text-[8px] uppercase tracking-wider text-text-secondary font-mono">Threat Mode</span>
+                <span className={`text-sm font-black font-mono ${m.color} animate-pulse`}>{m.label}</span>
+                <span className={`text-[8px] font-mono ${m.color} opacity-70`}>{m.desc}</span>
+              </div>
+            );
+          })()}
         </div>
 
         <div className="flex gap-3">
@@ -122,13 +141,14 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             
             {/* Tower Module Overlay */}
             {selectedTower && (
-              <TowerModule 
+              <TowerModule
                 tower={selectedTower}
                 gameState={gameState}
                 onUpgrade={onUpgradeTower}
                 onSpecialize={onSpecializeTower}
                 onSell={onSellTower}
                 onStartRelocation={onStartRelocation}
+                onSetTargetingMode={onSetTargetingMode}
                 onClose={() => onSelectTower(null)}
               />
             )}
@@ -267,8 +287,24 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 Prepare resources and authorize the initiation of the next encounter cycle.
               </p>
               
+              {(() => {
+                const upcoming = WAVES[gameState.waveNumber];
+                const mod = upcoming?.modifier;
+                if (!mod || mod === WaveModifier.NONE) return null;
+                const m = MODIFIER_STYLE[mod];
+                return (
+                  <div className={`mb-4 px-5 py-2 border rounded-lg flex flex-col items-center gap-0.5 ${
+                    mod === WaveModifier.RUSH  ? 'border-accent-amber/40 bg-accent-amber/5' :
+                    mod === WaveModifier.SWARM ? 'border-accent-red/40 bg-accent-red/5' :
+                    'border-purple-400/40 bg-purple-400/5'
+                  }`}>
+                    <span className={`text-xs font-black uppercase tracking-widest ${m.color}`}>⚠ {m.label} WAVE INCOMING</span>
+                    <span className={`text-[10px] font-mono ${m.color} opacity-70`}>{m.desc}</span>
+                  </div>
+                );
+              })()}
               <div className="flex gap-4">
-                <button 
+                <button
                   onClick={onStartWave}
                   className="group relative px-10 py-3 bg-accent-amber text-dark-bg font-black uppercase tracking-widest text-lg hover:brightness-110 active:scale-95 transition-all flex items-center gap-3"
                 >

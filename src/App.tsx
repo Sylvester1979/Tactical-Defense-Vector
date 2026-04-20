@@ -32,6 +32,7 @@ export default function App() {
     startRelocation,
     cancelRelocation,
     confirmRelocation,
+    setTowerTargetingMode,
     restart
   } = useGame();
 
@@ -106,6 +107,7 @@ export default function App() {
         onStartRelocation={startRelocation}
         onCancelRelocation={cancelRelocation}
         onSelectTower={(id) => setGameState(s => ({ ...s, selectedTowerId: id }))}
+        onSetTargetingMode={setTowerTargetingMode}
         placingType={placingType}
         setPlacingType={setPlacingType}
         renderCanvas={

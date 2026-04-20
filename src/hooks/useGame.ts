@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  TowerInstance, 
-  EnemyInstance, 
-  Projectile, 
-  GameState, 
-  TowerType, 
+import {
+  TowerInstance,
+  EnemyInstance,
+  Projectile,
+  GameState,
+  TowerType,
+  TargetingMode,
+  WaveModifier,
   Point,
   Particle,
   FloatingText
@@ -31,6 +33,7 @@ export function useGame() {
     selectedTowerId: null,
     relocatingTowerId: null,
     shakeTime: 0,
+    currentWaveModifier: WaveModifier.NONE,
   });
 
   const [towers, setTowers] = useState<TowerInstance[]>([]);
@@ -162,15 +165,21 @@ export function useGame() {
       wave = {
         count: Math.floor(baseWave.count * (1 + difficultyScale * 0.8)),
         interval: baseWave.interval * Math.pow(0.85, difficultyScale),
-        enemyTypes: baseWave.enemyTypes
+        enemyTypes: baseWave.enemyTypes,
+        modifier: baseWave.modifier,
       };
     }
-    
-    enemiesToSpawnRef.current = wave.count;
-    currentWaveRef.current = wave;
+
+    const modifier = wave.modifier ?? WaveModifier.NONE;
+    let effectiveCount = wave.count;
+    if (modifier === WaveModifier.SWARM) effectiveCount = wave.count * 2;
+    if (modifier === WaveModifier.ELITE) effectiveCount = Math.ceil(wave.count * 0.5);
+
+    enemiesToSpawnRef.current = effectiveCount;
+    currentWaveRef.current = { ...wave, modifier };
     spawnTimerRef.current = 0;
     setWaveActive(true);
-    setGameState(prev => ({ ...prev, isPaused: false, isWaveReady: false, waveNumber }));
+    setGameState(prev => ({ ...prev, isPaused: false, isWaveReady: false, waveNumber, currentWaveModifier: modifier }));
   }, [waveActive, gameState.waveNumber, gameState.isGameOver]);
 
   const placeTower = useCallback((type: TowerType, x: number, y: number) => {
@@ -199,7 +208,8 @@ export function useGame() {
       lastFired: 0,
       targetId: null,
       currentAngle: -Math.PI / 2,
-      baseType: type
+      baseType: type,
+      targetingMode: TargetingMode.FIRST,
     };
 
     setTowers(prev => [...prev, newTower]);
@@ -290,6 +300,22 @@ export function useGame() {
     createFloatingText(x, y - 20, "REDEPLOYED", "#00f2ff");
   }, [towers, isNearPath, createFloatingText, createExplosion]);
 
+  const selectTarget = (inRange: EnemyInstance[], mode: TargetingMode, tower: TowerInstance): EnemyInstance | undefined => {
+    if (inRange.length === 0) return undefined;
+    switch (mode) {
+      case TargetingMode.FIRST:
+        return inRange.reduce((a, b) => b.distanceTraveled > a.distanceTraveled ? b : a);
+      case TargetingMode.LAST:
+        return inRange.reduce((a, b) => b.distanceTraveled < a.distanceTraveled ? b : a);
+      case TargetingMode.STRONGEST:
+        return inRange.reduce((a, b) => b.health > a.health ? b : a);
+      case TargetingMode.WEAKEST:
+        return inRange.reduce((a, b) => b.health < a.health ? b : a);
+      case TargetingMode.CLOSEST:
+        return inRange.reduce((a, b) => getDistance(tower, b) < getDistance(tower, a) ? b : a);
+    }
+  };
+
   const update = useCallback((time: number) => {
     if (lastTimeRef.current !== undefined) {
       const dt = Math.min(0.05, (time - lastTimeRef.current) / 1000); // Bulletproof dt cap
@@ -316,11 +342,16 @@ export function useGame() {
             const waveNumber = currentGameState.waveNumber || 1;
             // Slightly softer health scaling for early game
             const scalingFactor = Math.max(0, waveNumber - 2) * 0.10;
+            const mod = (currentWaveRef.current?.modifier ?? WaveModifier.NONE) as WaveModifier;
+            const healthMult  = mod === WaveModifier.SWARM ? 0.5 : mod === WaveModifier.ELITE ? 2.0 : 1.0;
+            const speedMult   = mod === WaveModifier.RUSH  ? 2.0 : 1.0;
+            const rewardMult  = mod === WaveModifier.ELITE ? 1.5 : 1.0;
+            const baseHealth  = enemyType.health * (1 + scalingFactor) * healthMult;
             currentEnemies.push({
               id: `e-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
               type: randomType,
-              health: enemyType.health * (1 + scalingFactor),
-              maxHealth: enemyType.health * (1 + scalingFactor),
+              health: baseHealth,
+              maxHealth: baseHealth,
               x: PATH[0].x,
               y: PATH[0].y,
               pathIndex: 0,
@@ -331,6 +362,8 @@ export function useGame() {
               slowMultiplier: 1,
               burnDuration: 0,
               burnDamagePerSec: 0,
+              speedMultiplier: speedMult,
+              rewardMultiplier: rewardMult,
             });
           }
         }
@@ -352,7 +385,8 @@ export function useGame() {
             currentHealth -= enemy.burnDamagePerSec * dt;
           }
 
-          const newDist = enemy.distanceTraveled + (enemyType.speed * slowMult) * dt;
+          const waveSpeedMult = enemy.speedMultiplier ?? 1;
+          const newDist = enemy.distanceTraveled + (enemyType.speed * waveSpeedMult * slowMult) * dt;
           const pos = moveOnPath(newDist);
           return { 
             ...enemy, 
@@ -471,9 +505,10 @@ export function useGame() {
         currentEnemies = currentEnemies.filter(e => {
           if (e.health <= 0) {
             const type = ENEMY_TYPES[e.type];
-            moneyEarned += type.reward;
+            const reward = Math.round(type.reward * (e.rewardMultiplier ?? 1));
+            moneyEarned += reward;
             createExplosion(e.x, e.y, type.color, 12);
-            createFloatingText(e.x, e.y, `+$${type.reward}`, "#00f2ff");
+            createFloatingText(e.x, e.y, `+$${reward}`, "#00f2ff");
             return false;
           }
           return true;
@@ -488,7 +523,7 @@ export function useGame() {
           // Efficient Targeted Selection
           const range = stats.range * (1 + (tower.level - 1) * 0.1);
           const inRange = currentEnemies.filter(e => getDistance(tower, e) <= range);
-          const target = inRange.sort((a,b) => b.distanceTraveled - a.distanceTraveled)[0];
+          const target = selectTarget(inRange, tower.targetingMode, tower);
 
           let currentAngle = tower.currentAngle || -Math.PI / 2;
           if (target) {
@@ -563,7 +598,8 @@ export function useGame() {
           const updatedState = {
             ...gameStateRef.current,
             money: gameStateRef.current.money + waveBonus,
-            isWaveReady: true
+            isWaveReady: true,
+            currentWaveModifier: WaveModifier.NONE,
           };
           setWaveActive(false);
           setGameState(updatedState);
@@ -597,6 +633,10 @@ export function useGame() {
     return () => cancelAnimationFrame(requestRef.current!);
   }, [update]);
 
+  const setTowerTargetingMode = useCallback((id: string, mode: TargetingMode) => {
+    setTowers(prev => prev.map(t => t.id === id ? { ...t, targetingMode: mode } : t));
+  }, []);
+
   const restart = () => {
     setGameState({
       money: INITIAL_MONEY,
@@ -608,6 +648,7 @@ export function useGame() {
       selectedTowerId: null,
       relocatingTowerId: null,
       shakeTime: 0,
+      currentWaveModifier: WaveModifier.NONE,
     });
     setTowers([]);
     setEnemies([]);
@@ -634,6 +675,7 @@ export function useGame() {
     startRelocation,
     cancelRelocation,
     confirmRelocation,
+    setTowerTargetingMode,
     waveActive,
     restart
   };

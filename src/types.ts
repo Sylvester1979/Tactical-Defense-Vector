@@ -1,5 +1,20 @@
 export type Point = { x: number; y: number };
 
+export enum TargetingMode {
+  FIRST    = 'FIRST',     // closest to path end
+  LAST     = 'LAST',      // farthest from path end
+  STRONGEST = 'STRONGEST', // highest current HP
+  WEAKEST  = 'WEAKEST',   // lowest current HP
+  CLOSEST  = 'CLOSEST',   // nearest to tower
+}
+
+export enum WaveModifier {
+  NONE  = 'NONE',
+  RUSH  = 'RUSH',    // 2x enemy speed
+  SWARM = 'SWARM',   // 2x count, 0.5x HP
+  ELITE = 'ELITE',   // 0.5x count, 2x HP, 1.5x reward
+}
+
 export enum TowerType {
   BASIC = 'BASIC',
   SNIPER = 'SNIPER',
@@ -48,6 +63,7 @@ export interface TowerInstance {
   targetId: string | null;
   currentAngle?: number;
   baseType: TowerType;
+  targetingMode: TargetingMode;
 }
 
 export interface EnemyType {
@@ -72,9 +88,11 @@ export interface EnemyInstance {
   lastHitTime: number; // For flash animation
   hitAngle: number;    // For recoil direction
   slowDuration: number; // For slow effect
-  slowMultiplier: number; 
+  slowMultiplier: number;
   burnDuration: number; // Periodic damage
   burnDamagePerSec: number;
+  speedMultiplier?: number;   // Wave-level speed modifier
+  rewardMultiplier?: number;  // Wave-level reward modifier
 }
 
 export interface Projectile {
@@ -102,6 +120,7 @@ export interface Wave {
   count: number;
   interval: number;
   enemyTypes: string[];
+  modifier?: WaveModifier;
 }
 
 export interface Particle {
@@ -136,4 +155,5 @@ export interface GameState {
   selectedTowerId: string | null;
   relocatingTowerId: string | null;
   shakeTime: number;
+  currentWaveModifier: WaveModifier;
 }
