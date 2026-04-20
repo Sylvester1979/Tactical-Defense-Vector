@@ -304,7 +304,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Draw All Path Tops
     ctx.fillStyle = '#1c2128';
-    ctx.strokeStyle = '#2d333b';
+    ctx.strokeStyle = '#3d4b5c';
     ctx.lineWidth = 1;
 
     for (let i = 0; i < PATH.length - 1; i++) {
@@ -322,6 +322,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
        ctx.beginPath();
        ctx.moveTo(q1_t.x, q1_t.y); ctx.lineTo(q2_t.x, q2_t.y); ctx.lineTo(q3_t.x, q3_t.y); ctx.lineTo(q4_t.x, q4_t.y);
        ctx.closePath(); ctx.fill(); ctx.stroke();
+
+       // Edge accent lines along road top (both sides)
+       ctx.save();
+       ctx.strokeStyle = 'rgba(0, 242, 255, 0.12)';
+       ctx.lineWidth = 1;
+       const edgeInset = 6;
+       const ei = edgeInset / roadWidth;
+       const e1a = toIso(p1.x - dx*(1-ei*2), p1.y - dy*(1-ei*2), roadHeight + 0.5);
+       const e2a = toIso(p2.x - dx*(1-ei*2), p2.y - dy*(1-ei*2), roadHeight + 0.5);
+       const e1b = toIso(p1.x + dx*(1-ei*2), p1.y + dy*(1-ei*2), roadHeight + 0.5);
+       const e2b = toIso(p2.x + dx*(1-ei*2), p2.y + dy*(1-ei*2), roadHeight + 0.5);
+       ctx.beginPath(); ctx.moveTo(e1a.x, e1a.y); ctx.lineTo(e2a.x, e2a.y); ctx.stroke();
+       ctx.beginPath(); ctx.moveTo(e1b.x, e1b.y); ctx.lineTo(e2b.x, e2b.y); ctx.stroke();
+       ctx.restore();
 
        // Energy Stream along the path core
        ctx.save();
@@ -385,6 +399,101 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1.0;
+
+    // --- DIRECTIONAL ARROWS ON ROAD ---
+    ctx.save();
+    for (let i = 0; i < PATH.length - 1; i++) {
+      const p1 = PATH[i], p2 = PATH[i + 1];
+      const segDx = p2.x - p1.x, segDy = p2.y - p1.y;
+      const segLen = Math.sqrt(segDx * segDx + segDy * segDy);
+      const nx = segDx / segLen, ny = segDy / segLen;
+      const sdx = (nx - ny) * ISO_SCALE;
+      const sdy = (nx + ny) * ISO_SCALE * 0.5;
+      const screenAngle = Math.atan2(sdy, sdx);
+      const arrowStep = 80;
+      for (let d = arrowStep * 0.6; d < segLen - 10; d += arrowStep) {
+        const wx = p1.x + nx * d, wy = p1.y + ny * d;
+        const pt = toIso(wx, wy, roadHeight + 2);
+        ctx.save();
+        ctx.translate(pt.x, pt.y);
+        ctx.rotate(screenAngle);
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = '#00f2ff';
+        ctx.beginPath();
+        ctx.moveTo(7, 0); ctx.lineTo(-4, -4); ctx.lineTo(-2, 0); ctx.lineTo(-4, 4);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+
+    // --- ENTRY PORTAL (PATH[0]) ---
+    {
+      const entryPt = toIso(PATH[0].x, PATH[0].y, roadHeight + 2);
+      const t = (Date.now() / 900) % 1;
+      // Expanding ring
+      ctx.save();
+      ctx.globalAlpha = (1 - t) * 0.7;
+      ctx.strokeStyle = '#00f2ff';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 8; ctx.shadowColor = '#00f2ff';
+      ctx.beginPath();
+      ctx.ellipse(entryPt.x, entryPt.y, 10 + t * 28, (10 + t * 28) * 0.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      // Static inner marker
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = '#00f2ff'; ctx.lineWidth = 1.5;
+      ctx.shadowBlur = 14; ctx.shadowColor = '#00f2ff';
+      ctx.beginPath();
+      ctx.ellipse(entryPt.x, entryPt.y, 9, 4.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(0,242,255,0.25)';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#00f2ff';
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('ENTRY', entryPt.x, entryPt.y - 16);
+      ctx.restore();
+    }
+
+    // --- CORE TARGET (PATH[last]) ---
+    {
+      const last = PATH[PATH.length - 1];
+      const corePt = toIso(last.x, last.y, roadHeight + 2);
+      const pulse = 0.5 + Math.sin(Date.now() / 380) * 0.5;
+      ctx.save();
+      ctx.globalAlpha = 0.5 + pulse * 0.45;
+      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+      ctx.shadowBlur = 12 + pulse * 12; ctx.shadowColor = '#ef4444';
+      // Outer ring
+      ctx.beginPath();
+      ctx.ellipse(corePt.x, corePt.y, 14, 7, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      // Inner dot
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.ellipse(corePt.x, corePt.y, 4, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Cross-tick lines (iso-aligned)
+      ctx.lineWidth = 1.5;
+      ctx.shadowBlur = 0;
+      [[-1,0],[1,0],[0,-1],[0,1]].forEach(([tx, ty]) => {
+        const sdx2 = (tx - ty) * ISO_SCALE, sdy2 = (tx + ty) * ISO_SCALE * 0.5;
+        const ang = Math.atan2(sdy2, sdx2);
+        ctx.beginPath();
+        ctx.moveTo(corePt.x + Math.cos(ang) * 17, corePt.y + Math.sin(ang) * 17);
+        ctx.lineTo(corePt.x + Math.cos(ang) * 22, corePt.y + Math.sin(ang) * 22);
+        ctx.stroke();
+      });
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('CORE', corePt.x, corePt.y - 20);
+      ctx.restore();
+    }
 
     // Building Grid — only visible during placement or relocation
     if (placingType !== null || relocatingTowerId !== null) {
