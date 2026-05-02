@@ -421,7 +421,7 @@ export function useGame() {
             if (p.hitEnemyIds?.includes(enemy.id)) continue;
             
             const d = getDistance(p, enemy);
-            if (d < 18) { // Unified collision radius
+            if (d < 24) { // Wider radius compensates for frame-rate discretization
               if (p.isPiercing) {
                 targetsHit.push(enemy);
                 p.hitEnemyIds = [...(p.hitEnemyIds || []), enemy.id];
@@ -537,11 +537,16 @@ export function useGame() {
           if (target && nextLastFired >= fireInterval) {
             const enemyType = ENEMY_TYPES[target.type];
             const dist = getDistance(tower, target);
-            const timeToHit = dist / stats.projectileSpeed;
             const targetSpeedMult = target.speedMultiplier ?? 1;
             const targetSlowMult = target.slowDuration > 0 ? target.slowMultiplier : 1;
             const actualSpeed = enemyType.speed * targetSpeedMult * targetSlowMult;
-            const predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * timeToHit, pathLength));
+            // Iterative intercept: 3 passes converge for any enemy speed
+            let t = dist / stats.projectileSpeed;
+            let predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * t, pathLength));
+            for (let iter = 0; iter < 2; iter++) {
+              t = getDistance(tower, predPos) / stats.projectileSpeed;
+              predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * t, pathLength));
+            }
 
             currentProjectiles.push({
               id: `pr-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
