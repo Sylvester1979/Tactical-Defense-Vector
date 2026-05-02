@@ -2,7 +2,7 @@ import { TowerType, TowerStats, EnemyType, Point, DamageType, WaveModifier } fro
 
 export const CANVAS_WIDTH = 1000;
 export const CANVAS_HEIGHT = 800;
-export const INITIAL_MONEY = 400;
+export const INITIAL_MONEY = 500;
 export const INITIAL_LIVES = 20;
 export const RELOCATION_FEE = 40;
 

@@ -344,7 +344,7 @@ export function useGame() {
             const scalingFactor = Math.max(0, waveNumber - 2) * 0.10;
             const mod = (currentWaveRef.current?.modifier ?? WaveModifier.NONE) as WaveModifier;
             const healthMult  = mod === WaveModifier.SWARM ? 0.5 : mod === WaveModifier.ELITE ? 2.0 : 1.0;
-            const speedMult   = mod === WaveModifier.RUSH  ? 2.0 : 1.0;
+            const speedMult   = mod === WaveModifier.RUSH  ? 1.6 : 1.0;
             const rewardMult  = mod === WaveModifier.ELITE ? 1.5 : 1.0;
             const baseHealth  = enemyType.health * (1 + scalingFactor) * healthMult;
             currentEnemies.push({
@@ -531,14 +531,17 @@ export function useGame() {
             let angleDiff = targetAngle - currentAngle;
             while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
             while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-            currentAngle += angleDiff * dt * 8;
+            currentAngle += angleDiff * dt * 14;
           }
 
           if (target && nextLastFired >= fireInterval) {
             const enemyType = ENEMY_TYPES[target.type];
             const dist = getDistance(tower, target);
             const timeToHit = dist / stats.projectileSpeed;
-            const predPos = moveOnPath(Math.min(target.distanceTraveled + enemyType.speed * timeToHit, pathLength));
+            const targetSpeedMult = target.speedMultiplier ?? 1;
+            const targetSlowMult = target.slowDuration > 0 ? target.slowMultiplier : 1;
+            const actualSpeed = enemyType.speed * targetSpeedMult * targetSlowMult;
+            const predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * timeToHit, pathLength));
 
             currentProjectiles.push({
               id: `pr-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
@@ -594,7 +597,7 @@ export function useGame() {
         }
 
         if (currentEnemies.length === 0 && enemiesToSpawnRef.current === 0 && waveActive) {
-          const waveBonus = 100 + (currentGameState.waveNumber - 1) * 20;
+          const waveBonus = 120 + (currentGameState.waveNumber - 1) * 25;
           const updatedState = {
             ...gameStateRef.current,
             money: gameStateRef.current.money + waveBonus,
