@@ -66,6 +66,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const prevEnemySnapshotRef = useRef<Map<string, Shockwave>>(new Map());
   const lastFrameTimeRef = useRef<number>(performance.now());
 
+  // Fragmentation shards (enemy death debris) and ambient atmosphere embers
+  interface Shard { x: number; y: number; z: number; vx: number; vy: number; vz: number; angle: number; angVel: number; size: number; color: string; life: number; }
+  const shardsRef = useRef<Shard[]>([]);
+  interface Ember { x: number; y: number; z: number; vx: number; vy: number; vz: number; phase: number; size: number; color: string; alpha: number; }
+  const embersRef = useRef<Ember[]>([]);
+
   const [hoveredTowerId, setHoveredTowerId] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<Point>({ x: 0, y: 0 });
 
@@ -286,6 +292,25 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       bloomRef.current.height = CANVAS_HEIGHT >> 2;   // 200
     }
 
+    // Ambient embers: seeded once, drifted every frame
+    if (embersRef.current.length === 0) {
+      const ec = ['#00f2ff', '#4fe3ff', '#ffb800', '#ff9d42', '#a78bfa'];
+      for (let i = 0; i < 44; i++) {
+        embersRef.current.push({
+          x: Math.random() * CANVAS_WIDTH,
+          y: Math.random() * CANVAS_HEIGHT,
+          z: Math.random() * 65,
+          vx: (Math.random() - 0.5) * 7,
+          vy: (Math.random() - 0.5) * 7,
+          vz: 5 + Math.random() * 12,
+          phase: Math.random() * Math.PI * 2,
+          size: 0.8 + Math.random() * 1.2,
+          color: ec[Math.floor(Math.random() * ec.length)],
+          alpha: 0.06 + Math.random() * 0.16,
+        });
+      }
+    }
+
     // ── Delta time for shockwave animation ──────────────────────────────────
     const now = performance.now();
     const dt  = Math.min(0.05, (now - lastFrameTimeRef.current) / 1000);
@@ -307,6 +332,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     prevEnemySnapshotRef.current.forEach((snap, id) => {
       if (!currSnapshot.has(id)) {
         shockwavesRef.current.push({ ...snap, life: 1 });
+        // Fragmentation shards
+        const sc = 8 + Math.floor(Math.random() * 4);
+        for (let si = 0; si < sc; si++) {
+          const a = (si / sc) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+          const sp = 38 + Math.random() * 78;
+          shardsRef.current.push({
+            x: snap.x, y: snap.y, z: snap.h,
+            vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+            vz: 28 + Math.random() * 52,
+            angle: Math.random() * Math.PI * 2,
+            angVel: (Math.random() - 0.5) * 15,
+            size: 1.8 + Math.random() * 2.8,
+            color: snap.color, life: 1,
+          });
+        }
       }
     });
     prevEnemySnapshotRef.current = currSnapshot;
@@ -315,6 +355,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     shockwavesRef.current = shockwavesRef.current
       .map(w => ({ ...w, life: w.life - dt * 2.8 }))
       .filter(w => w.life > 0);
+    // Advance & cull fragmentation shards (gravity + rotation)
+    shardsRef.current = shardsRef.current
+      .map(s => ({ ...s,
+        x: s.x + s.vx * dt, y: s.y + s.vy * dt,
+        z: Math.max(0, s.z + s.vz * dt),
+        vz: s.vz - 140 * dt,
+        angle: s.angle + s.angVel * dt,
+        life: s.life - dt * 2.1,
+      }))
+      .filter(s => s.life > 0);
+    // Drift ambient embers, reset when out of bounds
+    embersRef.current.forEach(em => {
+      em.x += em.vx * dt; em.y += em.vy * dt; em.z += em.vz * dt;
+      if (em.z > 78 || em.x < -60 || em.x > CANVAS_WIDTH + 60 || em.y < -60 || em.y > CANVAS_HEIGHT + 60)
+        Object.assign(em, { x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT, z: 0 });
+    });
 
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     ctx.save();
@@ -328,6 +384,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     // 1. Render Background from Cache
     if (cacheRef.current) {
        ctx.drawImage(cacheRef.current, 0, 0);
+    }
+
+    // Ambient atmosphere embers (below road/entities for depth)
+    {
+      const nowS = performance.now() / 1000;
+      embersRef.current.forEach(em => {
+        const wx = Math.sin(nowS * 0.8 + em.phase) * 9;
+        const wy = Math.cos(nowS * 0.55 + em.phase * 1.4) * 4.5;
+        const pt = toIso(em.x + wx, em.y + wy, em.z);
+        ctx.save();
+        ctx.globalAlpha = em.alpha * (0.45 + 0.55 * Math.sin(nowS * 2.1 + em.phase * 2.3));
+        ctx.fillStyle = em.color;
+        ctx.shadowBlur = 5; ctx.shadowColor = em.color;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, em.size, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      });
     }
 
     // --- DYNAMIC GLOBAL ILLUMINATION (Projectile & Explosion Glow on ground) ---
@@ -728,7 +800,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const renderables = [
       ...enemies.map(e => ({ type: 'enemy', data: e, depth: e.x + e.y })),
       ...towers.map(t => ({ type: 'tower', data: t, depth: t.x + t.y })),
-      ...projectiles.map(p => ({ type: 'projectile', data: p, depth: p.x + p.y }))
+      ...projectiles.map(p => ({ type: 'projectile', data: p, depth: p.x + p.y })),
+      ...shardsRef.current.map(s => ({ type: 'shard', data: s, depth: s.x + s.y })),
     ].sort((a, b) => a.depth - b.depth);
 
     renderables.forEach(obj => {
@@ -886,6 +959,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.lineTo(tailPt.x, tailPt.y);
         ctx.stroke();
         ctx.globalAlpha = 1.0;
+      } else if (obj.type === 'shard') {
+        const s = obj.data as Shard;
+        const pt = toIso(s.x, s.y, s.z);
+        ctx.save();
+        ctx.translate(pt.x, pt.y);
+        ctx.rotate(s.angle);
+        ctx.globalAlpha = Math.pow(Math.max(0, s.life), 0.55) * 0.9;
+        ctx.fillStyle = s.color;
+        ctx.shadowBlur = 8 * s.life; ctx.shadowColor = s.color;
+        ctx.beginPath();
+        ctx.moveTo(0, -s.size * 1.5);
+        ctx.lineTo(s.size * 0.55, s.size * 0.9);
+        ctx.lineTo(-s.size * 0.55, s.size * 0.9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
       } else {
         const tower = obj.data as TowerInstance;
         const stats = TOWER_STATS[tower.type];
@@ -1148,6 +1237,50 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.restore();
         }
         ctx.restore();
+
+        // Firing beam — rendered outside turret transform, extends to world range
+        {
+          const beamDur = isSniper ? 0.10 : isSplash ? 0.09 : 0.07;
+          if (timeSinceFired < beamDur) {
+            const bp = timeSinceFired / beamDur;
+            const ba = Math.pow(1 - bp, 1.8) * 0.82;
+            const br = isSniper ? stats.range * 0.92 : isSplash ? stats.range * 0.65 : stats.range * 0.55;
+            const beamEnd = toIso(
+              tower.x + Math.cos(worldAngle) * br,
+              tower.y + Math.sin(worldAngle) * br,
+              towerH * 0.55
+            );
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            if (isSniper) {
+              ctx.globalAlpha = ba;
+              ctx.strokeStyle = stats.color;
+              ctx.lineWidth = 2.5;
+              ctx.shadowBlur = 22; ctx.shadowColor = stats.color;
+              ctx.beginPath(); ctx.moveTo(topPt.x, topPt.y); ctx.lineTo(beamEnd.x, beamEnd.y); ctx.stroke();
+              ctx.globalAlpha = ba * 0.45;
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 0.8;
+              ctx.shadowBlur = 0;
+              ctx.beginPath(); ctx.moveTo(topPt.x, topPt.y); ctx.lineTo(beamEnd.x, beamEnd.y); ctx.stroke();
+            } else if (isSplash) {
+              ctx.globalAlpha = ba * 0.7;
+              ctx.strokeStyle = stats.color;
+              ctx.lineWidth = 4;
+              ctx.shadowBlur = 18; ctx.shadowColor = stats.color;
+              ctx.beginPath(); ctx.moveTo(topPt.x, topPt.y); ctx.lineTo(beamEnd.x, beamEnd.y); ctx.stroke();
+            } else {
+              ctx.globalAlpha = ba * 0.65;
+              ctx.strokeStyle = stats.color;
+              ctx.lineWidth = 1.5;
+              ctx.shadowBlur = 10; ctx.shadowColor = stats.color;
+              ctx.setLineDash([5, 4]);
+              ctx.beginPath(); ctx.moveTo(topPt.x, topPt.y); ctx.lineTo(beamEnd.x, beamEnd.y); ctx.stroke();
+              ctx.setLineDash([]);
+            }
+            ctx.restore();
+          }
+        }
 
         // --- 6. SELECTION / HOVER RING ---
         if (isSelected || isHovered) {
