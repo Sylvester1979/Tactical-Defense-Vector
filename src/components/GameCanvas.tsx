@@ -13,6 +13,23 @@ const distToSegment = (px: number, py: number, x1: number, y1: number, x2: numbe
   return Math.sqrt((px - (x1 + t * (x2 - x1))) ** 2 + (py - (y1 + t * (y2 - y1))) ** 2);
 };
 
+// Unit world-space direction of travel for the path segment nearest to (x, y).
+// Used so motion-based effects (ghost trails) align with the actual heading.
+const pathDirAt = (x: number, y: number) => {
+  let best = Infinity, dirX = 1, dirY = 0;
+  for (let i = 0; i < PATH.length - 1; i++) {
+    const p1 = PATH[i], p2 = PATH[i + 1];
+    const d = distToSegment(x, y, p1.x, p1.y, p2.x, p2.y);
+    if (d < best) {
+      best = d;
+      const len = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+      dirX = (p2.x - p1.x) / len;
+      dirY = (p2.y - p1.y) / len;
+    }
+  }
+  return { dirX, dirY };
+};
+
 interface GameCanvasProps {
   towers: TowerInstance[];
   enemies: EnemyInstance[];
@@ -591,7 +608,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     // Z-SORTING AND RENDERING
     const renderables = [
       ...enemies.map(e => ({ type: 'enemy', data: e, depth: e.x + e.y })),
-      ...towers.map(t => ({ type: 'tower', data: t, depth: t.x + t.y }))
+      ...towers.map(t => ({ type: 'tower', data: t, depth: t.x + t.y })),
+      ...projectiles.map(p => ({ type: 'projectile', data: p, depth: p.x + p.y }))
     ].sort((a, b) => a.depth - b.depth);
 
     renderables.forEach(obj => {
@@ -628,13 +646,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.save();
         ctx.translate(pt.x, pt.y);
 
-        // --- ENERGY TRAILS (Ghosting) ---
+        // --- ENERGY TRAILS (Ghosting) — trail points opposite the screen-space heading ---
         if (enemy.type === 'PHANTOM' || enemy.type === 'INTERCEPTOR' || enemy.type === 'SCOUT') {
+           const { dirX, dirY } = pathDirAt(enemy.x, enemy.y);
+           const sdx = (dirX - dirY) * ISO_SCALE;
+           const sdy = (dirX + dirY) * ISO_SCALE * 0.5;
+           const slen = Math.hypot(sdx, sdy) || 1;
+           const bx = -sdx / slen, by = -sdy / slen; // backward unit vector in screen space
            ctx.save();
            ctx.globalAlpha = 0.15;
            for(let i=1; i<4; i++) {
-             const tx = -i * 4;
-             const ty = Math.sin(animTime * 10 + i) * 2;
+             const tx = bx * i * 4;
+             const ty = by * i * 4 + Math.sin(animTime * 10 + i) * 2;
              ctx.fillStyle = type.color;
              ctx.beginPath();
              ctx.arc(tx, ty, s/2 - i*2, 0, Math.PI * 2);
@@ -686,7 +709,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         }
         ctx.fill();
 
-        // --- STATUS EFFECT VISUALS ---
+        // Reset alpha — PHANTOM sets it to ~0.4 for its ghost body and must not bleed
+        // into the status effects / health bar below.
+        ctx.globalAlpha = 1;
+
+        // --- STATUS EFFECT VISUALS (explicit ring, independent of the leftover shape path) ---
         if (enemy.slowDuration > 0) {
           ctx.save();
           ctx.globalCompositeOperation = 'screen';
@@ -694,6 +721,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.shadowColor = '#0ea5e9';
           ctx.strokeStyle = '#0ea5e9';
           ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s / 2 + 3, s / 2 + 1, 0, 0, Math.PI * 2);
           ctx.stroke();
           ctx.restore();
         }
@@ -704,16 +733,40 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.shadowBlur = 8 + Math.random() * 8;
           ctx.shadowColor = '#f87171';
           ctx.fillStyle = `rgba(248, 113, 113, ${0.2 + Math.random() * 0.3})`;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s / 2, s / 2, 0, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
         }
-        
-        const barY = -s/2 - 5;
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(-s/2, barY, s, 3);
-        ctx.fillStyle = healthPct > 0.5 ? '#00ff00' : healthPct > 0.25 ? '#ffff00' : '#ff0000';
-        ctx.fillRect(-s/2, barY, s * healthPct, 3);
+
+        // Health bar — hidden at full health to cut visual clutter
+        if (healthPct < 0.999) {
+          const barY = -s/2 - 5;
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.fillRect(-s/2, barY, s, 3);
+          ctx.fillStyle = healthPct > 0.5 ? '#00ff00' : healthPct > 0.25 ? '#ffff00' : '#ff0000';
+          ctx.fillRect(-s/2, barY, s * healthPct, 3);
+        }
         ctx.restore();
+      } else if (obj.type === 'projectile') {
+        const p = obj.data as Projectile;
+        const pt = toIso(p.x, p.y, p.z);
+        ctx.fillStyle = TOWER_STATS[p.type].color;
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = TOWER_STATS[p.type].color;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Tracer line
+        ctx.strokeStyle = TOWER_STATS[p.type].color;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        const tailPt = toIso(p.x - (p.targetX - p.x)*0.1, p.y - (p.targetY - p.y)*0.1, p.z - (p.targetZ - p.z)*0.1);
+        ctx.moveTo(pt.x, pt.y);
+        ctx.lineTo(tailPt.x, tailPt.y);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
       } else {
         const tower = obj.data as TowerInstance;
         const stats = TOWER_STATS[tower.type];
@@ -1029,27 +1082,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.shadowBlur = 0;
     });
     ctx.globalAlpha = 1.0;
-
-    // Draw Projectiles
-    projectiles.forEach(p => {
-      const pt = toIso(p.x, p.y, p.z);
-      ctx.fillStyle = TOWER_STATS[p.type].color;
-      ctx.shadowBlur = 4;
-      ctx.shadowColor = TOWER_STATS[p.type].color;
-      ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = 0;
-      
-      // Tracer line
-      ctx.strokeStyle = TOWER_STATS[p.type].color;
-      ctx.lineWidth = 1;
-      ctx.globalAlpha = 0.3;
-      ctx.beginPath();
-      const tailPt = toIso(p.x - (p.targetX - p.x)*0.1, p.y - (p.targetY - p.y)*0.1, p.z - (p.targetZ - p.z)*0.1);
-      ctx.moveTo(pt.x, pt.y);
-      ctx.lineTo(tailPt.x, tailPt.y);
-      ctx.stroke();
-      ctx.globalAlpha = 1.0;
-    });
 
     // Draw Floating Texts
     floatingTexts.forEach(t => {
