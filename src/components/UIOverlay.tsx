@@ -198,113 +198,161 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-dark-bg text-text-primary">
       {/* TOP BAR */}
-      <header className="h-[60px] bg-panel-bg border-b-2 border-border-dim flex items-center px-6 justify-between shrink-0">
-        <div className="flex items-center gap-6">
+      <header
+        className="h-14 shrink-0 relative flex items-center px-5 gap-3 border-b border-white/[0.06]"
+        style={{ background: 'linear-gradient(to bottom, rgba(20,23,30,0.98), rgba(14,17,23,0.99))', backdropFilter: 'blur(24px)' }}
+      >
+        {/* hairline cyan glow along the bottom edge */}
+        <div className="pointer-events-none absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-accent-cyan/20 to-transparent" />
+
+        {/* ── LOGO ── */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center border border-accent-cyan/25"
+            style={{ background: 'radial-gradient(circle at 35% 30%, rgba(0,242,255,0.18), rgba(0,242,255,0.04))', boxShadow: '0 0 14px rgba(0,242,255,0.15)' }}
+          >
+            <Cpu className="w-4 h-4 text-accent-cyan" style={{ filter: 'drop-shadow(0 0 4px rgba(0,242,255,0.9))' }} />
+          </div>
+          <div className="flex flex-col leading-none">
+            <span className="text-[12px] font-black tracking-[0.22em] text-white font-mono">TDV</span>
+            <span className="text-[7px] tracking-[0.22em] uppercase text-white/25 font-mono">Defense Matrix</span>
+          </div>
+        </div>
+
+        <div className="w-px h-7 bg-white/[0.08] shrink-0" />
+
+        {/* ── STAT PILLS ── */}
+        <div className="flex items-stretch gap-2 flex-1 min-w-0">
+
           {/* Credits */}
-          <div className="flex flex-col">
-            <span className="text-[9px] uppercase tracking-wider text-text-secondary font-mono flex items-center gap-1">
-              <CreditCard className="w-3 h-3" /> Credits
-            </span>
-            <span className="text-xl font-bold font-mono text-accent-cyan drop-shadow-[0_0_8px_rgba(0,242,255,0.5)]">
-              ${gameState.money.toLocaleString()}
-            </span>
-          </div>
-
-          <div className="w-px h-8 bg-border-dim" />
-
-          {/* Core Integrity — segmented bar */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[9px] uppercase tracking-wider text-text-secondary font-mono flex items-center gap-1">
-              <Shield className="w-3 h-3" /> Core Integrity
-            </span>
-            <div className="flex items-center gap-2">
-              <span className={`text-sm font-bold font-mono w-6 tabular-nums ${
-                gameState.lives > 10 ? 'text-accent-cyan' : gameState.lives > 5 ? 'text-accent-amber' : 'text-accent-red'
-              }`}>{gameState.lives}</span>
-              <div className="flex gap-[2px]">
-                {Array.from({ length: INITIAL_LIVES }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-[6px] h-[14px] rounded-[2px] transition-all duration-300 ${
-                      i < gameState.lives
-                        ? gameState.lives > 10
-                          ? 'bg-accent-cyan shadow-[0_0_4px_rgba(0,242,255,0.6)]'
-                          : gameState.lives > 5
-                            ? 'bg-accent-amber shadow-[0_0_4px_rgba(255,184,0,0.6)]'
-                            : 'bg-accent-red shadow-[0_0_4px_rgba(239,68,68,0.8)] animate-pulse'
-                        : 'bg-white/10'
-                    }`}
-                  />
-                ))}
+          <div className="flex items-center gap-2.5 px-3.5 rounded-xl bg-white/[0.04] border border-white/[0.06]">
+            <CreditCard className="w-3.5 h-3.5 text-accent-cyan/55 shrink-0" />
+            <div>
+              <div className="text-[7px] uppercase tracking-widest text-white/28 font-mono leading-none">Credits</div>
+              <div
+                className="text-[17px] font-black font-mono text-accent-cyan tabular-nums leading-tight mt-0.5"
+                style={{ textShadow: '0 0 16px rgba(0,242,255,0.55)' }}
+              >
+                ${gameState.money.toLocaleString()}
               </div>
             </div>
           </div>
 
-          <div className="w-px h-8 bg-border-dim" />
+          {/* Core Integrity */}
+          {(() => {
+            const col = gameState.lives > 10 ? '#00f2ff' : gameState.lives > 5 ? '#ffb800' : '#ff4d4d';
+            const pct = (gameState.lives / INITIAL_LIVES) * 100;
+            return (
+              <div className="flex items-center gap-2.5 px-3.5 rounded-xl bg-white/[0.04] border border-white/[0.06]">
+                <Shield className="w-3.5 h-3.5 shrink-0" style={{ color: col, filter: `drop-shadow(0 0 4px ${col}80)` }} />
+                <div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[7px] uppercase tracking-widest text-white/28 font-mono leading-none">Integrity</span>
+                    <span className="text-[11px] font-black font-mono tabular-nums leading-none" style={{ color: col }}>{gameState.lives}</span>
+                  </div>
+                  <div className="mt-1.5 w-24 h-[4px] rounded-full bg-white/[0.08] overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%`, backgroundColor: col, boxShadow: `0 0 8px ${col}99` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
-          {/* Wave Progress — segmented bar */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[9px] uppercase tracking-wider text-text-secondary font-mono flex items-center gap-1">
-              <Activity className="w-3 h-3" /> Wave
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold font-mono text-accent-amber tabular-nums">
-                {gameState.waveNumber.toString().padStart(2, '0')}<span className="text-white/20 text-xs">/{WAVES.length}</span>
-              </span>
-              <div className="flex gap-[2px]">
-                {Array.from({ length: WAVES.length }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-[5px] h-[14px] rounded-[2px] transition-all duration-500 ${
-                      i < gameState.waveNumber ? 'bg-accent-amber shadow-[0_0_3px_rgba(255,184,0,0.5)]' : 'bg-white/10'
-                    }`}
-                  />
-                ))}
+          {/* Wave Progress */}
+          <div className="flex items-center gap-2.5 px-3.5 rounded-xl bg-white/[0.04] border border-white/[0.06]">
+            <Activity className="w-3.5 h-3.5 text-accent-amber/55 shrink-0" />
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-[7px] uppercase tracking-widest text-white/28 font-mono leading-none">Wave</span>
+                <span className="text-[11px] font-black font-mono text-accent-amber tabular-nums leading-none">
+                  {gameState.waveNumber.toString().padStart(2, '0')}<span className="text-white/20 text-[9px]">/{WAVES.length}</span>
+                </span>
+              </div>
+              <div className="mt-1.5 w-24 h-[4px] rounded-full bg-white/[0.08] overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${(gameState.waveNumber / WAVES.length) * 100}%`,
+                    background: 'linear-gradient(to right, #ffb800, #ff9500)',
+                    boxShadow: '0 0 8px rgba(255,184,0,0.7)',
+                  }}
+                />
               </div>
             </div>
           </div>
 
-          {/* Wave modifier badge */}
+          {/* Threat Modifier — only when active */}
           {gameState.currentWaveModifier !== WaveModifier.NONE && (() => {
             const m = MODIFIER_STYLE[gameState.currentWaveModifier];
-            const borderCls = gameState.currentWaveModifier === WaveModifier.RUSH ? 'border-accent-amber/50 bg-accent-amber/5'
-              : gameState.currentWaveModifier === WaveModifier.SWARM ? 'border-accent-red/50 bg-accent-red/5'
-              : 'border-purple-400/50 bg-purple-400/5';
+            const hex = MODIFIER_HEX[gameState.currentWaveModifier];
             return (
-              <div className={`flex flex-col justify-center px-3 py-1 border rounded ${borderCls}`}>
-                <span className={`text-[8px] uppercase tracking-wider font-mono text-white/40`}>Threat Mode</span>
-                <span className={`text-sm font-black font-mono ${m.color} animate-pulse`}>{m.label}</span>
-                <span className={`text-[8px] font-mono ${m.color} opacity-60`}>{m.desc}</span>
+              <div
+                className="flex items-center gap-2 px-3.5 rounded-xl border"
+                style={{ borderColor: `${hex}45`, backgroundColor: `${hex}10`, boxShadow: `0 0 16px ${hex}20` }}
+              >
+                <Zap className="w-3.5 h-3.5 shrink-0 animate-pulse" style={{ color: hex }} />
+                <div>
+                  <div className="text-[7px] uppercase tracking-widest text-white/28 font-mono leading-none">Threat</div>
+                  <div className="text-[11px] font-black font-mono leading-tight mt-0.5" style={{ color: hex, textShadow: `0 0 10px ${hex}` }}>{m.label}</div>
+                </div>
               </div>
             );
           })()}
         </div>
 
-        <div className="flex gap-3">
-          <button 
+        {/* ── CONTROLS ── */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Pause / Resume */}
+          <button
             onClick={onPauseToggle}
-            className="border border-border-dim px-4 py-2 text-xs uppercase font-mono hover:bg-border-dim transition-colors flex items-center gap-2"
+            title={gameState.isPaused ? 'Resume' : 'Pause'}
+            className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.09] hover:border-white/[0.18] transition-all group"
           >
-            {gameState.isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
-            {gameState.isPaused ? 'Resume' : 'Pause'}
+            {gameState.isPaused
+              ? <Play  className="w-4 h-4 text-white/55 group-hover:text-white transition-colors" />
+              : <Pause className="w-4 h-4 text-white/55 group-hover:text-white transition-colors" />
+            }
           </button>
-          <button 
+
+          {/* Restart */}
+          <button
             onClick={onRestart}
-            className="border border-border-dim px-4 py-2 text-xs uppercase font-mono hover:bg-border-dim transition-colors flex items-center gap-2 text-accent-red"
+            title="Restart"
+            className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/[0.08] bg-white/[0.04] hover:bg-accent-red/12 hover:border-accent-red/35 transition-all group"
           >
-            <RotateCcw className="w-3 h-3" /> Restart
+            <RotateCcw className="w-4 h-4 text-white/45 group-hover:text-accent-red transition-colors" />
           </button>
+
+          {/* Deploy CTA */}
           <button
             onClick={onStartWave}
             disabled={gameState.isGameOver || !gameState.isWaveReady}
-            className="bg-accent-amber text-dark-bg px-5 py-2 text-xs uppercase font-bold font-mono hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            className="relative h-9 pl-4 pr-5 rounded-xl font-black text-[11px] uppercase tracking-[0.14em] font-mono flex items-center gap-2 overflow-hidden transition-all disabled:opacity-35 disabled:cursor-not-allowed"
+            style={gameState.isWaveReady && !gameState.isGameOver ? {
+              background: 'linear-gradient(135deg, #ffb800 0%, #ff9200 100%)',
+              color: '#0d0f13',
+              boxShadow: '0 0 22px rgba(255,184,0,0.5), inset 0 1px 0 rgba(255,255,255,0.28)',
+            } : {
+              background: 'rgba(255,184,0,0.07)',
+              color: 'rgba(255,184,0,0.4)',
+              border: '1px solid rgba(255,184,0,0.18)',
+            }}
           >
-            {gameState.isWaveReady ? `Initiate Wave ${gameState.waveNumber + 1}` : 'Wave Active'}
+            {/* shimmer sweep while ready */}
+            {gameState.isWaveReady && !gameState.isGameOver && (
+              <span
+                className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent"
+                style={{ animation: 'shimmer 2.4s ease-in-out infinite' }}
+              />
+            )}
+            <Zap className="w-3.5 h-3.5 relative z-10 shrink-0" />
+            <span className="relative z-10 whitespace-nowrap">
+              {gameState.isWaveReady ? `Wave ${gameState.waveNumber + 1}` : 'Active'}
+            </span>
           </button>
-          <div className="border-l border-border-dim pl-3 flex flex-col justify-center">
-            <span className="text-[8px] uppercase tracking-widest text-white/20 font-mono">Build</span>
-            <span className="text-[9px] font-mono text-white/30">{buildLabel}</span>
-          </div>
         </div>
       </header>
 
