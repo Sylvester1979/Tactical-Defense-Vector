@@ -78,3 +78,8 @@ body {
 .jitter-effect {
   animation: jitter 0.2s infinite;
 }
+
+@keyframes shimmer {
+  0%   { transform: translateX(-200%); }
+  60%, 100% { transform: translateX(200%); }
+}
