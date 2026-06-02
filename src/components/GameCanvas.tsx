@@ -608,7 +608,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     // Z-SORTING AND RENDERING
     const renderables = [
       ...enemies.map(e => ({ type: 'enemy', data: e, depth: e.x + e.y })),
-      ...towers.map(t => ({ type: 'tower', data: t, depth: t.x + t.y }))
+      ...towers.map(t => ({ type: 'tower', data: t, depth: t.x + t.y })),
+      ...projectiles.map(p => ({ type: 'projectile', data: p, depth: p.x + p.y }))
     ].sort((a, b) => a.depth - b.depth);
 
     renderables.forEach(obj => {
@@ -747,6 +748,25 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.fillRect(-s/2, barY, s * healthPct, 3);
         }
         ctx.restore();
+      } else if (obj.type === 'projectile') {
+        const p = obj.data as Projectile;
+        const pt = toIso(p.x, p.y, p.z);
+        ctx.fillStyle = TOWER_STATS[p.type].color;
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = TOWER_STATS[p.type].color;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Tracer line
+        ctx.strokeStyle = TOWER_STATS[p.type].color;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        const tailPt = toIso(p.x - (p.targetX - p.x)*0.1, p.y - (p.targetY - p.y)*0.1, p.z - (p.targetZ - p.z)*0.1);
+        ctx.moveTo(pt.x, pt.y);
+        ctx.lineTo(tailPt.x, tailPt.y);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
       } else {
         const tower = obj.data as TowerInstance;
         const stats = TOWER_STATS[tower.type];
@@ -1062,27 +1082,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.shadowBlur = 0;
     });
     ctx.globalAlpha = 1.0;
-
-    // Draw Projectiles
-    projectiles.forEach(p => {
-      const pt = toIso(p.x, p.y, p.z);
-      ctx.fillStyle = TOWER_STATS[p.type].color;
-      ctx.shadowBlur = 4;
-      ctx.shadowColor = TOWER_STATS[p.type].color;
-      ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = 0;
-      
-      // Tracer line
-      ctx.strokeStyle = TOWER_STATS[p.type].color;
-      ctx.lineWidth = 1;
-      ctx.globalAlpha = 0.3;
-      ctx.beginPath();
-      const tailPt = toIso(p.x - (p.targetX - p.x)*0.1, p.y - (p.targetY - p.y)*0.1, p.z - (p.targetZ - p.z)*0.1);
-      ctx.moveTo(pt.x, pt.y);
-      ctx.lineTo(tailPt.x, tailPt.y);
-      ctx.stroke();
-      ctx.globalAlpha = 1.0;
-    });
 
     // Draw Floating Texts
     floatingTexts.forEach(t => {
