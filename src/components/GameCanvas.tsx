@@ -233,19 +233,39 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         cctx.moveTo(t_iso[0].x, t_iso[0].y); t_iso.forEach(p => cctx.lineTo(p.x, p.y));
         cctx.closePath(); cctx.fill();
 
-        // 3. Technical Grid Patterns
-        cctx.strokeStyle = 'rgba(0, 242, 255, 0.05)';
+        // 3. Fine isometric grid with node marks
+        cctx.strokeStyle = 'rgba(0, 242, 255, 0.032)';
         cctx.lineWidth = 0.5;
-        for (let i = 0; i < CANVAS_WIDTH; i += 120) {
-          for (let j = 0; j < CANVAS_HEIGHT; j += 120) {
-            const p1 = toIso(i, j);
-            const p2 = toIso(i + 40, j);
-            const p3 = toIso(i + 40, j + 40);
-            cctx.beginPath();
-            cctx.moveTo(p1.x, p1.y); cctx.lineTo(p2.x, p2.y); cctx.lineTo(p3.x, p3.y);
-            cctx.stroke();
+        for (let gx = 0; gx <= CANVAS_WIDTH + 80; gx += 40) {
+          for (let gy = 0; gy <= CANVAS_HEIGHT + 80; gy += 40) {
+            const p  = toIso(gx, gy, 0);
+            const px = toIso(gx + 40, gy, 0);
+            const py = toIso(gx, gy + 40, 0);
+            cctx.beginPath(); cctx.moveTo(p.x, p.y); cctx.lineTo(px.x, px.y); cctx.stroke();
+            cctx.beginPath(); cctx.moveTo(p.x, p.y); cctx.lineTo(py.x, py.y); cctx.stroke();
           }
         }
+        cctx.fillStyle = 'rgba(0, 242, 255, 0.09)';
+        for (let gx = 0; gx <= CANVAS_WIDTH + 80; gx += 80) {
+          for (let gy = 0; gy <= CANVAS_HEIGHT + 80; gy += 80) {
+            const p = toIso(gx, gy, 0);
+            cctx.beginPath(); cctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2); cctx.fill();
+          }
+        }
+        // Terrain variation patches — darker zones that break up the flat surface
+        ([
+          [820, 620], [360, 520], [620, 640],
+          [45, 310], [830, 190], [500, 680],
+        ] as [number, number][]).forEach(([tx, ty]) => {
+          const tp = toIso(tx, ty, 0);
+          const tg = cctx.createRadialGradient(tp.x, tp.y, 0, tp.x, tp.y, 70);
+          tg.addColorStop(0, 'rgba(0,0,0,0.25)');
+          tg.addColorStop(1, 'rgba(0,0,0,0)');
+          cctx.fillStyle = tg;
+          cctx.beginPath();
+          cctx.ellipse(tp.x, tp.y, 70, 35, 0, 0, Math.PI * 2);
+          cctx.fill();
+        });
 
       }
     }
@@ -361,11 +381,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
     });
 
-    // Draw All Path Tops
-    ctx.fillStyle = '#1c2128';
-    ctx.strokeStyle = '#3d4b5c';
-    ctx.lineWidth = 1;
+    // Pre-compute cumulative segment distances for continuous dash offsets
+    const segStartDist: number[] = [0];
+    for (let i = 0; i < PATH.length - 1; i++) {
+      const sdx = PATH[i+1].x - PATH[i].x, sdy = PATH[i+1].y - PATH[i].y;
+      segStartDist.push(segStartDist[i] + Math.sqrt(sdx*sdx + sdy*sdy));
+    }
 
+    // Draw All Path Tops — gradient surface + hazard markings + center divider
     for (let i = 0; i < PATH.length - 1; i++) {
        const p1 = PATH[i]; const p2 = PATH[i+1];
        const angle = Math.atan2(p2.y-p1.y, p2.x-p1.x);
@@ -378,49 +401,78 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
        const q3_t = toIso(p2.x + dx, p2.y + dy, roadHeight);
        const q4_t = toIso(p1.x + dx, p1.y + dy, roadHeight);
 
+       // Cross-width gradient: darker edges, slightly lighter worn center
+       const gFrom = { x: (q1_t.x + q2_t.x) / 2, y: (q1_t.y + q2_t.y) / 2 };
+       const gTo   = { x: (q3_t.x + q4_t.x) / 2, y: (q3_t.y + q4_t.y) / 2 };
+       const surfGrad = ctx.createLinearGradient(gFrom.x, gFrom.y, gTo.x, gTo.y);
+       surfGrad.addColorStop(0,    '#0f161e');
+       surfGrad.addColorStop(0.18, '#19222e');
+       surfGrad.addColorStop(0.5,  '#1e2a38');
+       surfGrad.addColorStop(0.82, '#19222e');
+       surfGrad.addColorStop(1,    '#0f161e');
+       ctx.fillStyle = surfGrad;
+       ctx.strokeStyle = '#243040';
+       ctx.lineWidth = 0.8;
        ctx.beginPath();
-       ctx.moveTo(q1_t.x, q1_t.y); ctx.lineTo(q2_t.x, q2_t.y); ctx.lineTo(q3_t.x, q3_t.y); ctx.lineTo(q4_t.x, q4_t.y);
+       ctx.moveTo(q1_t.x, q1_t.y); ctx.lineTo(q2_t.x, q2_t.y);
+       ctx.lineTo(q3_t.x, q3_t.y); ctx.lineTo(q4_t.x, q4_t.y);
        ctx.closePath(); ctx.fill(); ctx.stroke();
 
-       // Edge accent lines along road top (both sides)
+       // Hazard edge markings — continuous amber dashes along both borders
        ctx.save();
-       ctx.strokeStyle = 'rgba(0, 242, 255, 0.12)';
-       ctx.lineWidth = 1;
-       const edgeInset = 6;
-       const ei = edgeInset / roadWidth;
-       const e1a = toIso(p1.x - dx*(1-ei*2), p1.y - dy*(1-ei*2), roadHeight + 0.5);
-       const e2a = toIso(p2.x - dx*(1-ei*2), p2.y - dy*(1-ei*2), roadHeight + 0.5);
-       const e1b = toIso(p1.x + dx*(1-ei*2), p1.y + dy*(1-ei*2), roadHeight + 0.5);
-       const e2b = toIso(p2.x + dx*(1-ei*2), p2.y + dy*(1-ei*2), roadHeight + 0.5);
-       ctx.beginPath(); ctx.moveTo(e1a.x, e1a.y); ctx.lineTo(e2a.x, e2a.y); ctx.stroke();
-       ctx.beginPath(); ctx.moveTo(e1b.x, e1b.y); ctx.lineTo(e2b.x, e2b.y); ctx.stroke();
+       ctx.lineWidth = 3;
+       ctx.setLineDash([14, 10]);
+       ctx.lineDashOffset = -segStartDist[i];
+       ctx.strokeStyle = 'rgba(255,184,0,0.28)';
+       ctx.beginPath(); ctx.moveTo(q1_t.x, q1_t.y); ctx.lineTo(q2_t.x, q2_t.y); ctx.stroke();
+       ctx.beginPath(); ctx.moveTo(q4_t.x, q4_t.y); ctx.lineTo(q3_t.x, q3_t.y); ctx.stroke();
+       ctx.setLineDash([]);
        ctx.restore();
 
-       // Energy Stream along the path core
+       // Center divider — faint dashed line down the road axis
+       const c1 = { x: (q1_t.x + q4_t.x) / 2, y: (q1_t.y + q4_t.y) / 2 };
+       const c2 = { x: (q2_t.x + q3_t.x) / 2, y: (q2_t.y + q3_t.y) / 2 };
        ctx.save();
-       const streamTime = Date.now() / 1500;
-       const streamPos = (streamTime + i * 0.2) % 1.0;
-       ctx.strokeStyle = 'rgba(0, 242, 255, 0.4)';
-       ctx.lineWidth = 2;
-       ctx.beginPath();
-       const s1 = toIso(p1.x + (p2.x-p1.x)*(streamPos), p1.y + (p2.y-p1.y)*(streamPos), roadHeight + 1);
-       const streamLen = 0.2;
-       const sEnd = Math.min(1.0, streamPos + streamLen);
-       const s2 = toIso(p1.x + (p2.x-p1.x)*(sEnd), p1.y + (p2.y-p1.y)*(sEnd), roadHeight + 1);
-       ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
-       ctx.stroke();
+       ctx.strokeStyle = 'rgba(255,255,255,0.055)';
+       ctx.lineWidth = 1;
+       ctx.setLineDash([6, 14]);
+       ctx.lineDashOffset = -segStartDist[i] * 0.5;
+       ctx.beginPath(); ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.stroke();
+       ctx.setLineDash([]);
        ctx.restore();
     }
     
-    // Path Caps (Joint Tops)
+    // Path Caps (Joint Tops) — metallic flat cap with radial specular
     PATH.forEach(p => {
-       ctx.beginPath();
-       for(let i=0; i<=32; i++){
-          const a = (i/32) * Math.PI * 2;
-          const pt = toIso(p.x + Math.cos(a) * roadWidth/2, p.y + Math.sin(a) * roadWidth/2, roadHeight);
-          if (i===0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
-       }
-       ctx.closePath(); ctx.fill(); ctx.stroke();
+      const jp = toIso(p.x, p.y, roadHeight);
+      const capG = ctx.createRadialGradient(jp.x - 5, jp.y - 4, 0, jp.x, jp.y, 42);
+      capG.addColorStop(0, '#1e2e40');
+      capG.addColorStop(0.55, '#141d28');
+      capG.addColorStop(1, '#0d141e');
+      ctx.fillStyle = capG;
+      ctx.strokeStyle = '#28384e';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      for (let i = 0; i <= 32; i++) {
+        const a = (i / 32) * Math.PI * 2;
+        const pt = toIso(p.x + Math.cos(a) * roadWidth / 2, p.y + Math.sin(a) * roadWidth / 2, roadHeight);
+        if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
+
+    // Corner AO — ambient occlusion shadow at each interior waypoint
+    PATH.forEach((p, idx) => {
+      if (idx === 0 || idx === PATH.length - 1) return;
+      const jp = toIso(p.x, p.y, roadHeight + 0.5);
+      const aoG = ctx.createRadialGradient(jp.x, jp.y, 0, jp.x, jp.y, 38);
+      aoG.addColorStop(0, 'rgba(0,0,0,0.38)');
+      aoG.addColorStop(0.45, 'rgba(0,0,0,0.12)');
+      aoG.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = aoG;
+      ctx.beginPath();
+      ctx.ellipse(jp.x, jp.y, 38, 19, 0, 0, Math.PI * 2);
+      ctx.fill();
     });
 
     // --- 2. SHADOWS (On top of road) ---
@@ -444,20 +496,41 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     towers.forEach(t => drawShadow(t.x, t.y, 22));
 
-    // Energy Flow on Path
-    const flowTime = Date.now() / 1000;
-    ctx.setLineDash([10, 20]);
-    ctx.lineDashOffset = -flowTime * 50;
-    ctx.strokeStyle = '#00f2ff';
-    ctx.globalAlpha = 0.2;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    const firstFlow = toIso(PATH[0].x, PATH[0].y, roadHeight + 1);
-    ctx.moveTo(firstFlow.x, firstFlow.y);
-    PATH.forEach(p => { const pt = toIso(p.x, p.y, roadHeight + 1); ctx.lineTo(pt.x, pt.y); });
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1.0;
+    // Energy Flow — wide glow halo + animated dash stream from ENTRY to CORE
+    {
+      const flowTime = Date.now() / 1000;
+      const flowPts = PATH.map(p => toIso(p.x, p.y, roadHeight + 1));
+      // Outer glow halo (screen blend, no hard edges)
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = 0.10;
+      ctx.strokeStyle = '#00f2ff';
+      ctx.lineWidth = 14;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.shadowBlur = 20; ctx.shadowColor = '#00f2ff';
+      ctx.beginPath();
+      ctx.moveTo(flowPts[0].x, flowPts[0].y);
+      flowPts.forEach(fp => ctx.lineTo(fp.x, fp.y));
+      ctx.stroke();
+      ctx.restore();
+      // Animated dash stream
+      ctx.save();
+      ctx.globalAlpha = 0.30;
+      ctx.strokeStyle = '#00f2ff';
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.setLineDash([8, 18]);
+      ctx.lineDashOffset = -flowTime * 65;
+      ctx.shadowBlur = 8; ctx.shadowColor = '#00f2ff';
+      ctx.beginPath();
+      ctx.moveTo(flowPts[0].x, flowPts[0].y);
+      flowPts.forEach(fp => ctx.lineTo(fp.x, fp.y));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
 
     // --- DIRECTIONAL ARROWS ON ROAD ---
     ctx.save();
