@@ -99,12 +99,11 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
     const el = viewportRef.current;
     if (!el) return;
     const recompute = () => {
-      const pad = 32; // breathing room around the arena
       const k = Math.min(
-        (el.clientWidth - pad) / CANVAS_WIDTH,
-        (el.clientHeight - pad) / CANVAS_HEIGHT
+        el.clientWidth / CANVAS_WIDTH,
+        el.clientHeight / CANVAS_HEIGHT
       );
-      setArenaScale(Math.max(0.5, k));
+      setArenaScale(Math.max(0.4, k));
     };
     recompute();
     const ro = new ResizeObserver(recompute);
@@ -307,14 +306,29 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
         {/* GAME VIEWPORT */}
         <section
           ref={viewportRef}
-          className="flex-1 relative bg-[radial-gradient(circle_at_50%_50%,#161b22_0%,#0d1117_100%)] overflow-hidden flex items-center justify-center"
+          className="flex-1 overflow-hidden flex items-center justify-center bg-[radial-gradient(circle_at_50%_50%,#161b22_0%,#0d1117_100%)]"
         >
-          <div
-            className="relative border border-border-dim shrink-0"
-            style={{ transform: `scale(${arenaScale})`, transformOrigin: 'center center' }}
-          >
+          {/*
+            Two-div scaling trick:
+            - Outer div claims the correct LAYOUT space (scaled dimensions) so
+              no overflow / clipping occurs and flex centering works.
+            - Inner div contains the raw 1000×800 content and CSS-scales it
+              from the top-left corner to visually fill the outer box.
+              All overlays (TowerModule, relocation, grid) live here so they
+              scale together and stay pixel-aligned with the canvas.
+          */}
+          <div style={{
+            width: CANVAS_WIDTH * arenaScale,
+            height: CANVAS_HEIGHT * arenaScale,
+            position: 'relative',
+            flexShrink: 0,
+          }}>
+            <div
+              className="absolute top-0 left-0 border border-border-dim"
+              style={{ transform: `scale(${arenaScale})`, transformOrigin: 'top left' }}
+            >
             {renderCanvas}
-            
+
             {/* Tower Module Overlay */}
             {selectedTower && (
               <TowerModule
@@ -363,7 +377,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 Placing: {TOWER_STATS[placingType].name} | ESC to Cancel
               </div>
             )}
-          </div>
+            </div>{/* end scale-inner */}
+          </div>{/* end layout-outer */}
         </section>
 
         {/* SIDEBAR — Command Deck */}
@@ -445,22 +460,16 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                           </span>
                         )}
                       </div>
-                      <p className="text-[9px] text-white/30 font-mono mt-1.5 leading-relaxed line-clamp-2 group-hover:line-clamp-none transition-all">
+                      <p className="text-[9px] text-white/28 font-mono mt-1 leading-snug line-clamp-1 group-hover:line-clamp-none transition-all">
                         {stats.description}
                       </p>
-                      {/* mini stat row */}
-                      <div className="grid grid-cols-3 gap-1 mt-2">
-                        {[
-                          { k: 'DMG', v: stats.damage },
-                          { k: 'RNG', v: stats.range },
-                          { k: 'ROF', v: `${stats.fireRate}/s` },
-                        ].map(({ k, v }) => (
-                          <div key={k} className="rounded bg-black/30 border border-white/[0.05] px-1.5 py-1 text-center">
-                            <div className="text-[7px] font-mono text-white/30 tracking-wider">{k}</div>
-                            <div className="text-[10px] font-mono font-bold text-white/75 tabular-nums leading-tight">{v}</div>
-                          </div>
-                        ))}
-                      </div>
+                      <p className="text-[8px] font-mono text-white/28 mt-1 tabular-nums">
+                        DMG <span className="text-white/55">{stats.damage}</span>
+                        <span className="mx-1.5 opacity-30">·</span>
+                        RNG <span className="text-white/55">{stats.range}</span>
+                        <span className="mx-1.5 opacity-30">·</span>
+                        ROF <span className="text-white/55">{stats.fireRate}/s</span>
+                      </p>
                     </div>
                   </button>
                 );
