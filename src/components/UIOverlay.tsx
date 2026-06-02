@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
 import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode, DamageType } from '../types';
-import { TOWER_STATS, INITIAL_LIVES, WAVES } from '../constants';
+import { TOWER_STATS, INITIAL_LIVES, WAVES, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 
 interface UIOverlayProps {
   gameState: GameState;
@@ -91,6 +91,27 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 }) => {
   const selectedTower = towers.find(t => t.id === gameState.selectedTowerId);
 
+  // --- Responsive arena scaling: grow the fixed-resolution canvas to fill
+  //     the available viewport while preserving its 1000×800 aspect ratio. ---
+  const viewportRef = React.useRef<HTMLDivElement>(null);
+  const [arenaScale, setArenaScale] = React.useState(1);
+  React.useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const recompute = () => {
+      const pad = 32; // breathing room around the arena
+      const k = Math.min(
+        (el.clientWidth - pad) / CANVAS_WIDTH,
+        (el.clientHeight - pad) / CANVAS_HEIGHT
+      );
+      setArenaScale(Math.max(0.5, k));
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const buildDate = new Date(__BUILD_TIME__);
   const buildLabel = buildDate.toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     + ' ' + buildDate.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' });
@@ -150,6 +171,23 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
     count: towers.filter(t => t.baseType === base).length,
     color: TOWER_STATS[base].color,
   }));
+
+  // Shared glass-panel styling for the modern command-deck sidebar.
+  const panelCls = "relative rounded-xl bg-white/[0.025] border border-white/[0.07] backdrop-blur-xl shadow-[0_12px_34px_-14px_rgba(0,0,0,0.8)] overflow-hidden";
+
+  const SectionHeader: React.FC<{
+    icon: React.ComponentType<IconProps>;
+    label: string;
+    accent?: string;
+    right?: React.ReactNode;
+  }> = ({ icon: Icon, label, accent = '#00f2ff', right }) => (
+    <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-white/[0.06] bg-white/[0.015]">
+      <span className="h-3.5 w-[3px] rounded-full" style={{ backgroundColor: accent, boxShadow: `0 0 8px ${accent}` }} />
+      <Icon className="w-3.5 h-3.5" style={{ color: accent }} />
+      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/75 font-mono">{label}</span>
+      {right && <div className="ml-auto flex items-center">{right}</div>}
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-dark-bg text-text-primary">
@@ -267,8 +305,14 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
       {/* MAIN LAYOUT */}
       <main className="flex flex-1 overflow-hidden">
         {/* GAME VIEWPORT */}
-        <section className="flex-1 relative bg-[radial-gradient(circle_at_50%_50%,#161b22_0%,#0d1117_100%)] p-5 overflow-auto flex items-center justify-center">
-          <div className="relative border border-border-dim">
+        <section
+          ref={viewportRef}
+          className="flex-1 relative bg-[radial-gradient(circle_at_50%_50%,#161b22_0%,#0d1117_100%)] overflow-hidden flex items-center justify-center"
+        >
+          <div
+            className="relative border border-border-dim shrink-0"
+            style={{ transform: `scale(${arenaScale})`, transformOrigin: 'center center' }}
+          >
             {renderCanvas}
             
             {/* Tower Module Overlay */}
@@ -322,14 +366,19 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           </div>
         </section>
 
-        {/* SIDEBAR */}
-        <aside className="w-[320px] bg-panel-bg border-l border-border-dim flex flex-col p-6 gap-6 overflow-y-auto">
+        {/* SIDEBAR — Command Deck */}
+        <aside className="w-[336px] shrink-0 bg-gradient-to-b from-[#15181e] via-[#111419] to-[#0d0f13] border-l border-white/[0.06] flex flex-col gap-4 overflow-y-auto p-4 relative">
+          {/* ambient top glow */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-accent-cyan/[0.05] to-transparent" />
+
           {/* ARSENAL */}
-          <div className="flex flex-col">
-            <h2 className="text-[11px] font-black uppercase tracking-widest text-text-secondary border-b border-border-dim pb-2 mb-4">
-              Arsenal Selection
-            </h2>
-            <div className="space-y-3">
+          <section className={panelCls}>
+            <SectionHeader
+              icon={Crosshair}
+              label="Arsenal"
+              right={<span className="text-[9px] font-mono text-white/30 tracking-wider">{BASE_TOWER_TYPES.length} UNITS</span>}
+            />
+            <div className="p-3 space-y-2.5">
               {BASE_TOWER_TYPES.map(type => {
                 const stats = TOWER_STATS[type];
                 const isAffordable = gameState.money >= stats.cost;
@@ -341,23 +390,37 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                   <button
                     key={type}
                     onClick={() => setPlacingType(isSelected ? null : type)}
-                    className={`w-full border p-3 flex gap-3 text-left transition-all group ${
-                      isSelected ? 'border-accent-cyan bg-accent-cyan/5 ring-1 ring-accent-cyan/20' :
-                      'border-border-dim bg-white/[0.02] hover:bg-white/[0.05]'
+                    className={`group relative w-full rounded-lg p-3 pl-4 flex gap-3 text-left transition-all duration-200 ${
+                      isSelected ? 'border border-transparent' : 'border border-white/[0.06] hover:border-white/[0.14] hover:-translate-y-0.5'
                     } ${!isAffordable && !isSelected ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                    style={{
+                      background: isSelected
+                        ? `linear-gradient(135deg, ${stats.color}22, ${stats.color}06)`
+                        : 'rgba(255,255,255,0.018)',
+                      boxShadow: isSelected ? `0 0 0 1px ${stats.color}, 0 8px 24px -10px ${stats.color}aa` : undefined,
+                    }}
                   >
+                    {/* color rail */}
+                    <span
+                      className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full transition-opacity"
+                      style={{ backgroundColor: stats.color, opacity: isSelected ? 1 : 0.45, boxShadow: isSelected ? `0 0 8px ${stats.color}` : undefined }}
+                    />
                     <div
-                      className="w-10 h-10 shrink-0 flex items-center justify-center mt-0.5 rounded border"
-                      style={{ backgroundColor: `${stats.color}1a`, borderColor: `${stats.color}40` }}
+                      className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg border transition-transform group-hover:scale-105"
+                      style={{ background: `linear-gradient(135deg, ${stats.color}22, ${stats.color}08)`, borderColor: `${stats.color}33` }}
                     >
                       <Icon className="w-5 h-5" style={{ color: stats.color }} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-bold leading-tight truncate">{stats.name}</p>
-                        <span className="text-xs font-bold text-accent-cyan shrink-0">${stats.cost}</span>
+                        <p className="text-sm font-bold leading-tight truncate text-white/90">{stats.name}</p>
+                        <span
+                          className={`text-[10px] font-bold font-mono shrink-0 px-1.5 py-0.5 rounded ${isAffordable ? 'text-accent-cyan bg-accent-cyan/10' : 'text-accent-red bg-accent-red/10'}`}
+                        >
+                          ${stats.cost}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                      <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                         <span className={`text-[8px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${dmg.cls}`}>
                           {dmg.label}
                         </span>
@@ -385,95 +448,100 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                       <p className="text-[9px] text-white/30 font-mono mt-1.5 leading-relaxed line-clamp-2 group-hover:line-clamp-none transition-all">
                         {stats.description}
                       </p>
-                      <p className="text-[9px] text-text-secondary font-mono mt-1">
-                        DMG <span className="text-white/60">{stats.damage}</span>
-                        <span className="mx-1 opacity-30">·</span>
-                        RNG <span className="text-white/60">{stats.range}</span>
-                        <span className="mx-1 opacity-30">·</span>
-                        ROF <span className="text-white/60">{stats.fireRate}/s</span>
-                      </p>
+                      {/* mini stat row */}
+                      <div className="grid grid-cols-3 gap-1 mt-2">
+                        {[
+                          { k: 'DMG', v: stats.damage },
+                          { k: 'RNG', v: stats.range },
+                          { k: 'ROF', v: `${stats.fireRate}/s` },
+                        ].map(({ k, v }) => (
+                          <div key={k} className="rounded bg-black/30 border border-white/[0.05] px-1.5 py-1 text-center">
+                            <div className="text-[7px] font-mono text-white/30 tracking-wider">{k}</div>
+                            <div className="text-[10px] font-mono font-bold text-white/75 tabular-nums leading-tight">{v}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </button>
                 );
               })}
             </div>
-          </div>
+          </section>
 
           {/* BATTLEFIELD INTEL */}
-          <div className="flex flex-col border border-border-dim bg-black/20 overflow-hidden relative">
-            <div className="absolute inset-0 bg-gradient-to-br from-accent-cyan/3 to-transparent pointer-events-none" />
-            <div className="relative z-10 flex flex-col">
-              <h2 className="text-[11px] font-black uppercase tracking-widest text-text-secondary border-b border-border-dim px-4 py-2.5 flex items-center justify-between">
-                <span className="flex items-center gap-2"><Layers className="w-3 h-3" /> Battlefield Intel</span>
-                <Activity className="w-3 h-3 animate-pulse text-accent-cyan" />
-              </h2>
+          <section className={panelCls}>
+            <SectionHeader
+              icon={Layers}
+              label="Battlefield Intel"
+              right={<Activity className="w-3 h-3 animate-pulse text-accent-cyan" />}
+            />
 
-              {/* Stats 2×2 grid */}
-              <div className="grid grid-cols-2 gap-px bg-border-dim border-b border-border-dim">
-                {[
-                  { label: 'Deployed', value: towers.length.toString(), color: 'text-accent-cyan', icon: <Cpu className="w-3 h-3" /> },
-                  { label: 'Wave', value: gameState.isWaveReady ? 'STANDBY' : 'ACTIVE', color: gameState.isWaveReady ? 'text-white/50' : 'text-accent-red', pulse: !gameState.isWaveReady, icon: <Activity className="w-3 h-3" /> },
-                  { label: 'Wave Bonus', value: `$${gameState.isWaveReady ? 120 + gameState.waveNumber * 25 : 120 + (gameState.waveNumber - 1) * 25}`, color: 'text-accent-amber', icon: <CreditCard className="w-3 h-3" /> },
-                  { label: 'Integrity', value: `${Math.round((gameState.lives / INITIAL_LIVES) * 100)}%`, color: gameState.lives > 10 ? 'text-accent-cyan' : gameState.lives > 5 ? 'text-accent-amber' : 'text-accent-red', pulse: gameState.lives <= 5, icon: <Shield className="w-3 h-3" /> },
-                ].map(({ label, value, color, pulse, icon }) => (
-                  <div key={label} className="bg-black/30 px-3 py-2 flex flex-col gap-0.5">
-                    <span className="text-[8px] uppercase tracking-wider text-white/30 font-mono flex items-center gap-1">{icon}{label}</span>
-                    <span className={`text-sm font-black font-mono ${color} ${pulse ? 'animate-pulse' : ''}`}>{value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Tower type breakdown */}
-              <div className="px-4 py-3 space-y-2 border-b border-border-dim">
-                <span className="text-[8px] uppercase tracking-widest text-white/30 font-mono">Defense Grid</span>
-                {towerBreakdown.map(({ base, label, count, color }) => (
-                  <div key={base} className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: color, opacity: 0.8 }} />
-                    <span className="text-[9px] font-mono text-white/50 w-12">{label}</span>
-                    <div className="flex-1 flex gap-0.5 h-1.5">
-                      {count > 0
-                        ? Array.from({ length: count }).map((_, i) => (
-                            <div key={i} className="flex-1 rounded-full" style={{ backgroundColor: color, opacity: 0.65 }} />
-                          ))
-                        : <div className="flex-1 rounded-full bg-white/5" />
-                      }
-                    </div>
-                    <span className="text-[9px] font-mono text-white/40 w-3 text-right">{count}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Active modifier strip */}
-              {gameState.currentWaveModifier !== WaveModifier.NONE && (() => {
-                const m = MODIFIER_STYLE[gameState.currentWaveModifier];
-                const hex = MODIFIER_HEX[gameState.currentWaveModifier];
-                return (
-                  <div className="px-4 py-2 flex items-center gap-2" style={{ backgroundColor: `${hex}10`, borderTop: `1px solid ${hex}30` }}>
-                    <Zap className="w-3 h-3 shrink-0" style={{ color: hex }} />
-                    <span className="text-[9px] font-black font-mono uppercase" style={{ color: hex }}>{m.label}</span>
-                    <span className="text-[8px] font-mono opacity-60 ml-auto" style={{ color: hex }}>{m.desc}</span>
-                  </div>
-                );
-              })()}
-
-              {/* Neural link hint when nothing selected */}
-              {!selectedTower && (
-                <div className="px-4 py-3 flex items-center gap-3 opacity-30">
-                  <Cpu className="w-4 h-4 shrink-0 animate-[spin_8s_linear_infinite]" />
-                  <p className="text-[9px] text-text-secondary font-mono leading-relaxed">Select a unit on the map to inspect and control it.</p>
+            {/* Stat tiles 2×2 */}
+            <div className="grid grid-cols-2 gap-2 p-3">
+              {[
+                { label: 'Deployed', value: towers.length.toString(), color: '#00f2ff', icon: Cpu },
+                { label: 'Status', value: gameState.isWaveReady ? 'STANDBY' : 'ACTIVE', color: gameState.isWaveReady ? '#8b949e' : '#ff4d4d', pulse: !gameState.isWaveReady, icon: Activity },
+                { label: 'Wave Bonus', value: `$${gameState.isWaveReady ? 120 + gameState.waveNumber * 25 : 120 + (gameState.waveNumber - 1) * 25}`, color: '#ffb800', icon: CreditCard },
+                { label: 'Integrity', value: `${Math.round((gameState.lives / INITIAL_LIVES) * 100)}%`, color: gameState.lives > 10 ? '#00f2ff' : gameState.lives > 5 ? '#ffb800' : '#ff4d4d', pulse: gameState.lives <= 5, icon: Shield },
+              ].map(({ label, value, color, pulse, icon: Icon }) => (
+                <div key={label} className="relative rounded-lg bg-black/30 border border-white/[0.05] px-3 py-2.5 overflow-hidden">
+                  <Icon className="absolute -right-2.5 -top-2.5 w-12 h-12 opacity-[0.06]" style={{ color }} />
+                  <span className="text-[8px] uppercase tracking-wider text-white/35 font-mono">{label}</span>
+                  <div className={`text-base font-black font-mono tabular-nums leading-tight mt-0.5 ${pulse ? 'animate-pulse' : ''}`} style={{ color }}>{value}</div>
                 </div>
-              )}
+              ))}
             </div>
-          </div>
+
+            {/* Tower type breakdown */}
+            <div className="px-4 pb-3 space-y-2">
+              <span className="text-[8px] uppercase tracking-widest text-white/30 font-mono">Defense Grid</span>
+              {towerBreakdown.map(({ base, label, count, color }) => (
+                <div key={base} className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: color, opacity: 0.85, boxShadow: count > 0 ? `0 0 6px ${color}80` : undefined }} />
+                  <span className="text-[9px] font-mono text-white/50 w-12">{label}</span>
+                  <div className="flex-1 flex gap-0.5 h-1.5">
+                    {count > 0
+                      ? Array.from({ length: count }).map((_, i) => (
+                          <div key={i} className="flex-1 rounded-full" style={{ backgroundColor: color, opacity: 0.65 }} />
+                        ))
+                      : <div className="flex-1 rounded-full bg-white/5" />
+                    }
+                  </div>
+                  <span className="text-[9px] font-mono text-white/40 w-3 text-right tabular-nums">{count}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Active modifier strip */}
+            {gameState.currentWaveModifier !== WaveModifier.NONE && (() => {
+              const m = MODIFIER_STYLE[gameState.currentWaveModifier];
+              const hex = MODIFIER_HEX[gameState.currentWaveModifier];
+              return (
+                <div className="px-4 py-2 flex items-center gap-2" style={{ backgroundColor: `${hex}10`, borderTop: `1px solid ${hex}30` }}>
+                  <Zap className="w-3 h-3 shrink-0" style={{ color: hex }} />
+                  <span className="text-[9px] font-black font-mono uppercase" style={{ color: hex }}>{m.label}</span>
+                  <span className="text-[8px] font-mono opacity-60 ml-auto" style={{ color: hex }}>{m.desc}</span>
+                </div>
+              );
+            })()}
+
+            {/* Neural link hint when nothing selected */}
+            {!selectedTower && (
+              <div className="px-4 py-3 flex items-center gap-3 opacity-30 border-t border-white/[0.04]">
+                <Cpu className="w-4 h-4 shrink-0 animate-[spin_8s_linear_infinite]" />
+                <p className="text-[9px] text-text-secondary font-mono leading-relaxed">Select a unit on the map to inspect and control it.</p>
+              </div>
+            )}
+          </section>
 
           {/* SYSTEM FEED — scrolling log */}
-          <div className="h-[130px] bg-black border border-border-dim flex flex-col shrink-0">
-            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border-dim text-accent-cyan opacity-80">
-              <Terminal className="w-3 h-3 shrink-0" />
-              <span className="text-[9px] font-black uppercase tracking-widest font-mono">System Feed</span>
-              <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-cyan animate-pulse" />
-            </div>
-            <div ref={logRef} className="flex-1 overflow-y-auto px-3 py-1.5 space-y-0.5 scrollbar-none">
+          <section className={`${panelCls} h-[150px] flex flex-col shrink-0`}>
+            <SectionHeader
+              icon={Terminal}
+              label="System Feed"
+              right={<div className="w-1.5 h-1.5 rounded-full bg-accent-cyan animate-pulse shadow-[0_0_6px_#00f2ff]" />}
+            />
+            <div ref={logRef} className="flex-1 overflow-y-auto px-3.5 py-2 space-y-0.5 scrollbar-none bg-black/30">
               {logEntries.map(entry => (
                 <div key={entry.id} className="flex gap-2 items-baseline font-mono text-[9px] leading-relaxed">
                   <span className="text-white/20 shrink-0 tabular-nums">{entry.time}</span>
@@ -481,7 +549,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         </aside>
       </main>
 

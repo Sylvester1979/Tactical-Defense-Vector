@@ -1260,9 +1260,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-    
+    // Map CSS-pixel position back into the fixed 1000×800 drawing buffer,
+    // accounting for any responsive CSS scaling of the canvas element.
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const sx = (e.clientX - rect.left) * scaleX;
+    const sy = (e.clientY - rect.top) * scaleY;
+
     // Convert Screen to Game Coordinates
     const coords = fromIso(sx, sy);
     onCanvasClick(coords.x, coords.y, sx, sy);
@@ -1272,8 +1276,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const sx = (e.clientX - rect.left) * scaleX;
+    const sy = (e.clientY - rect.top) * scaleY;
 
     const hovered = towers.find(t => {
       const towerH = 40 + t.level * 2;
