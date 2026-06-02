@@ -1255,23 +1255,25 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const bctx = bloom.getContext('2d');
         if (bctx) {
           bctx.clearRect(0, 0, bloom.width, bloom.height);
-          // Extract: downsample + amplify bright neon elements
-          bctx.filter = 'blur(3px) brightness(7) saturate(3.5)';
+          // Extract bright emitters only. contrast(6) thresholds around 0.5
+          // luminance — the dark platform/terrain is crushed to black while
+          // neon elements survive; brightness lifts the survivors, blur spreads.
+          bctx.filter = 'contrast(6) brightness(1.15) saturate(1.7) blur(1.5px)';
           bctx.drawImage(canvas, 0, 0, bloom.width, bloom.height);
           bctx.filter = 'none';
 
-          // Layer 1: tight inner bloom (1/4→full upscale = effectively ~12px blur)
+          // Layer 1: tight inner bloom (1/4→full upscale ≈ 12px corona)
           ctx.save();
           ctx.globalCompositeOperation = 'screen';
-          ctx.globalAlpha = 0.40;
+          ctx.globalAlpha = 0.45;
           ctx.drawImage(bloom, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
           ctx.restore();
 
-          // Layer 2: wide atmospheric halo (extra canvas-level blur on the way back)
+          // Layer 2: wide atmospheric halo (extra blur on the way back)
           ctx.save();
           ctx.globalCompositeOperation = 'screen';
-          ctx.globalAlpha = 0.22;
-          ctx.filter = 'blur(20px)';
+          ctx.globalAlpha = 0.30;
+          ctx.filter = 'blur(14px)';
           ctx.drawImage(bloom, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
           ctx.filter = 'none';
           ctx.restore();
