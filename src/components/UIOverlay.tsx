@@ -1,8 +1,8 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Play, 
-  Pause, 
+import {
+  Play,
+  Pause,
   RotateCcw,
   Zap,
   Target,
@@ -14,7 +14,9 @@ import {
   XCircle,
   Terminal,
   Cpu,
-  MoveVertical
+  MoveVertical,
+  Crosshair,
+  Bomb
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
 import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode, DamageType } from '../types';
@@ -62,6 +64,13 @@ const MODIFIER_HEX: Record<WaveModifier, string> = {
 };
 
 const BASE_TOWER_TYPES = [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH] as const;
+
+type IconProps = { className?: string; style?: React.CSSProperties };
+const TOWER_ICON: Partial<Record<TowerType, React.ComponentType<IconProps>>> = {
+  [TowerType.BASIC]: Crosshair,
+  [TowerType.SNIPER]: Target,
+  [TowerType.SPLASH]: Bomb,
+};
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
   gameState,
@@ -327,9 +336,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 const isSelected = placingType === type;
 
                 const dmg = DMG_STYLE[stats.damageType];
-                const TOWER_EMOJI: Partial<Record<TowerType, string>> = {
-                  [TowerType.BASIC]: '🔫', [TowerType.SNIPER]: '🎯', [TowerType.SPLASH]: '💣',
-                };
+                const Icon = TOWER_ICON[type] ?? Target;
                 return (
                   <button
                     key={type}
@@ -339,8 +346,11 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                       'border-border-dim bg-white/[0.02] hover:bg-white/[0.05]'
                     } ${!isAffordable && !isSelected ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
                   >
-                    <div className="w-10 h-10 shrink-0 bg-border-dim flex items-center justify-center text-base mt-0.5">
-                      {TOWER_EMOJI[type] ?? '🗼'}
+                    <div
+                      className="w-10 h-10 shrink-0 flex items-center justify-center mt-0.5 rounded border"
+                      style={{ backgroundColor: `${stats.color}1a`, borderColor: `${stats.color}40` }}
+                    >
+                      <Icon className="w-5 h-5" style={{ color: stats.color }} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
