@@ -137,7 +137,6 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   // Tower breakdown by base type
   const towerBreakdown = BASE_TOWER_TYPES.map(base => ({
     base,
-    icon: base === TowerType.BASIC ? '🔫' : base === TowerType.SNIPER ? '🎯' : '💣',
     label: base === TowerType.BASIC ? 'Vulcan' : base === TowerType.SNIPER ? 'Rail' : 'Mortar',
     count: towers.filter(t => t.baseType === base).length,
     color: TOWER_STATS[base].color,
@@ -244,10 +243,10 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           </button>
           <button
             onClick={onStartWave}
-            disabled={gameState.isGameOver}
-            className="bg-accent-amber text-dark-bg px-5 py-2 text-xs uppercase font-bold font-mono hover:brightness-110 disabled:grayscale transition-all"
+            disabled={gameState.isGameOver || !gameState.isWaveReady}
+            className="bg-accent-amber text-dark-bg px-5 py-2 text-xs uppercase font-bold font-mono hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
-            Initiate Next Wave
+            {gameState.isWaveReady ? `Initiate Wave ${gameState.waveNumber + 1}` : 'Wave Active'}
           </button>
           <div className="border-l border-border-dim pl-3 flex flex-col justify-center">
             <span className="text-[8px] uppercase tracking-widest text-white/20 font-mono">Build</span>
@@ -404,7 +403,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 {[
                   { label: 'Deployed', value: towers.length.toString(), color: 'text-accent-cyan', icon: <Cpu className="w-3 h-3" /> },
                   { label: 'Wave', value: gameState.isWaveReady ? 'STANDBY' : 'ACTIVE', color: gameState.isWaveReady ? 'text-white/50' : 'text-accent-red', pulse: !gameState.isWaveReady, icon: <Activity className="w-3 h-3" /> },
-                  { label: 'Wave Bonus', value: `$${100 + gameState.waveNumber * 20}`, color: 'text-accent-amber', icon: <CreditCard className="w-3 h-3" /> },
+                  { label: 'Wave Bonus', value: `$${gameState.isWaveReady ? 120 + gameState.waveNumber * 25 : 120 + (gameState.waveNumber - 1) * 25}`, color: 'text-accent-amber', icon: <CreditCard className="w-3 h-3" /> },
                   { label: 'Integrity', value: `${Math.round((gameState.lives / INITIAL_LIVES) * 100)}%`, color: gameState.lives > 10 ? 'text-accent-cyan' : gameState.lives > 5 ? 'text-accent-amber' : 'text-accent-red', pulse: gameState.lives <= 5, icon: <Shield className="w-3 h-3" /> },
                 ].map(({ label, value, color, pulse, icon }) => (
                   <div key={label} className="bg-black/30 px-3 py-2 flex flex-col gap-0.5">
@@ -417,14 +416,17 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               {/* Tower type breakdown */}
               <div className="px-4 py-3 space-y-2 border-b border-border-dim">
                 <span className="text-[8px] uppercase tracking-widest text-white/30 font-mono">Defense Grid</span>
-                {towerBreakdown.map(({ base, icon, label, count, color }) => (
+                {towerBreakdown.map(({ base, label, count, color }) => (
                   <div key={base} className="flex items-center gap-2">
-                    <span className="text-sm w-4 text-center leading-none">{icon}</span>
+                    <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: color, opacity: 0.8 }} />
                     <span className="text-[9px] font-mono text-white/50 w-12">{label}</span>
-                    <div className="flex-1 flex gap-0.5 h-2">
-                      {Array.from({ length: Math.max(count, 1) }).map((_, i) => (
-                        <div key={i} className="flex-1 rounded-full" style={{ backgroundColor: i < count ? color : 'rgba(255,255,255,0.05)', opacity: i < count ? 0.7 : 1 }} />
-                      ))}
+                    <div className="flex-1 flex gap-0.5 h-1.5">
+                      {count > 0
+                        ? Array.from({ length: count }).map((_, i) => (
+                            <div key={i} className="flex-1 rounded-full" style={{ backgroundColor: color, opacity: 0.65 }} />
+                          ))
+                        : <div className="flex-1 rounded-full bg-white/5" />
+                      }
                     </div>
                     <span className="text-[9px] font-mono text-white/40 w-3 text-right">{count}</span>
                   </div>
@@ -475,19 +477,23 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 
       {/* OVERLAYS */}
       <AnimatePresence>
-        {gameState.isWaveReady && !gameState.isGameOver && (
-          <motion.div 
+        {gameState.isWaveReady && !gameState.isGameOver && gameState.waveNumber > 0 && (
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.05 }}
             className="absolute inset-x-0 top-1/2 -translate-y-1/2 z-[500] flex flex-col items-center justify-center p-12 bg-[#0d1117]/80 backdrop-blur-md border-y-2 border-accent-amber shadow-[0_0_100px_rgba(255,191,0,0.15)]"
           >
+            {/* Static accent lines — top and bottom */}
+            <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-amber to-transparent opacity-50" />
+            <div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-amber to-transparent opacity-50" />
+
             <div className="flex flex-col items-center max-w-xl text-center">
               <span className="text-[10px] uppercase tracking-[0.5em] text-accent-amber mb-4 font-black">
                 Aegis Matrix Stable
               </span>
               <h2 className="text-6xl font-black text-white italic tracking-tighter mb-2">
-                WAVE COMPLETED
+                WAVE {gameState.waveNumber} CLEARED
               </h2>
               <p className="text-text-secondary font-mono text-sm leading-relaxed mb-8">
                 Defensive protocols verified. Threat level currently neutralized. 
@@ -521,9 +527,6 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               </div>
             </div>
             
-            {/* Background scanner lines for effect */}
-            <div className="absolute top-0 left-0 w-full h-[1px] bg-accent-amber opacity-30 animate-[scan-y_2s_linear_infinite]" />
-            <div className="absolute bottom-0 left-0 w-full h-[1px] bg-accent-amber opacity-30 animate-[scan-y_2s_reverse_linear_infinite]" />
           </motion.div>
         )}
 

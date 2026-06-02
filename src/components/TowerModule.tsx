@@ -1,15 +1,16 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  ArrowUp, 
-  Trash2, 
-  Zap, 
-  Shield, 
-  Target, 
+import {
+  ArrowUp,
+  Trash2,
+  Zap,
+  Shield,
+  Target,
   Activity,
   Cpu,
   Unplug,
-  MoveVertical
+  MoveVertical,
+  X
 } from 'lucide-react';
 import { TowerInstance, GameState, TowerType, TargetingMode, DamageType } from '../types';
 import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
@@ -81,8 +82,8 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   const canAffordUpgrade = gameState.money >= upgradeCost;
   const canAffordRelocation = gameState.money >= RELOCATION_FEE;
   
-  // Calculate next level stats
-  const nextDamage = stats.damage * (1 + tower.level * 0.5);
+  // Next-level preview using the same coefficients as the game engine
+  const nextDamage = stats.damage * (1 + tower.level * 0.45);
   const nextRange = stats.range * (1 + tower.level * 0.1);
   const nextFireRate = stats.fireRate * (1 + tower.level * 0.2);
 
@@ -124,11 +125,11 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                   {stats.name} <span className="text-accent-amber">MK.{tower.level}</span>
                 </span>
               </div>
-              <button 
+              <button
                 onClick={onClose}
                 className="hover:bg-white/10 p-1 rounded transition-colors"
               >
-                <Target className="w-3 h-3 text-white/40" />
+                <X className="w-3 h-3 text-white/40" />
               </button>
             </header>
 
@@ -172,7 +173,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                     <Activity className="w-2 h-2" />
                   </div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-sm font-bold text-accent-red">{(stats.damage * (1 + (tower.level - 1) * 0.5)).toFixed(1)}</span>
+                    <span className="text-sm font-bold text-accent-red">{(stats.damage * (1 + (tower.level - 1) * 0.45)).toFixed(1)}</span>
                     <span className="text-white/20">→ {nextDamage.toFixed(1)}</span>
                   </div>
                 </div>
@@ -209,22 +210,33 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
               </div>
 
               {/* Progress Level */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[8px] uppercase tracking-tighter text-white/40">
-                  <span>Evolution Path</span>
-                  <span>{tower.level}/5</span>
-                </div>
-                <div className="flex gap-1 h-1">
-                  {[...Array(5)].map((_, i) => (
-                    <div 
-                      key={i} 
-                      className={`flex-1 rounded-full transition-all duration-500 ${
-                        i < tower.level ? 'bg-accent-cyan shadow-[0_0_5px_#00f2ff]' : 'bg-white/10'
-                      }`} 
-                    />
-                  ))}
-                </div>
-              </div>
+              {(() => {
+                const maxLevel = isBaseType ? 3 : 5;
+                const atCap = tower.level >= maxLevel;
+                const capLabel = isBaseType && atCap ? 'SPEC READY' : isSpecialized && atCap ? 'MAXED' : `${tower.level}/${maxLevel}`;
+                return (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[8px] uppercase tracking-tighter text-white/40">
+                      <span>Evolution Path</span>
+                      <span className={atCap ? (isBaseType ? 'text-accent-amber' : 'text-accent-cyan') : ''}>{capLabel}</span>
+                    </div>
+                    <div className="flex gap-1 h-1">
+                      {[...Array(maxLevel)].map((_, i) => (
+                        <div
+                          key={i}
+                          className={`flex-1 rounded-full transition-all duration-500 ${
+                            i < tower.level
+                              ? atCap && isBaseType
+                                ? 'bg-accent-amber shadow-[0_0_5px_rgba(255,184,0,0.6)]'
+                                : 'bg-accent-cyan shadow-[0_0_5px_#00f2ff]'
+                              : 'bg-white/10'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Actions */}
               <div className="flex flex-col gap-2 pt-2">
