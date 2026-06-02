@@ -102,6 +102,48 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.globalAlpha = oldAlpha;
   };
 
+  // Directionally-lit prism: each face gets a light/shadow overlay based on its world-space normal.
+  // Virtual light source: upper-left in iso screen ≈ world (-0.8, -0.2).
+  const drawLitPrism = (ctx: CanvasRenderingContext2D, x: number, y: number, z: number, r: number, h: number, sides: number, baseColor: string, alpha = 1.0) => {
+    const vb: {x:number,y:number}[] = [], vt: {x:number,y:number}[] = [];
+    for (let i = 0; i < sides; i++) {
+      const a = (i / sides) * Math.PI * 2 + Math.PI / sides;
+      vb.push(toIso(x + Math.cos(a) * r, y + Math.sin(a) * r, z));
+      vt.push(toIso(x + Math.cos(a) * r, y + Math.sin(a) * r, z + h));
+    }
+    const old = ctx.globalAlpha;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < sides; i++) {
+      const next = (i + 1) % sides;
+      const fa = ((i + 0.5) / sides) * Math.PI * 2 + Math.PI / sides;
+      const dot = Math.max(0, Math.cos(fa) * -0.8 + Math.sin(fa) * -0.2);
+      const shade = 0.3 + dot * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(vb[i].x, vb[i].y); ctx.lineTo(vb[next].x, vb[next].y);
+      ctx.lineTo(vt[next].x, vt[next].y); ctx.lineTo(vt[i].x, vt[i].y);
+      ctx.closePath();
+      ctx.fillStyle = baseColor; ctx.fill();
+      ctx.fillStyle = shade < 0.65
+        ? `rgba(0,0,0,${(0.65 - shade) * 0.9})`
+        : `rgba(255,255,255,${(shade - 0.65) * 0.14})`;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.stroke();
+    }
+    // Top face with radial specular highlight
+    ctx.beginPath();
+    ctx.moveTo(vt[0].x, vt[0].y); vt.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.closePath();
+    ctx.fillStyle = baseColor; ctx.fill();
+    const tc = toIso(x, y, z + h);
+    const tg = ctx.createRadialGradient(tc.x - 2, tc.y - 2, 0, tc.x, tc.y, r * 0.95);
+    tg.addColorStop(0, 'rgba(255,255,255,0.28)');
+    tg.addColorStop(1, 'rgba(0,0,0,0.3)');
+    ctx.fillStyle = tg; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.stroke();
+    ctx.globalAlpha = old;
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -675,161 +717,304 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       } else {
         const tower = obj.data as TowerInstance;
         const stats = TOWER_STATS[tower.type];
-        // Tall architectural towers
         const towerH = 40 + tower.level * 2;
         const baseSize = 22;
-        
-        const pt = toIso(tower.x, tower.y);
         const topPt = toIso(tower.x, tower.y, towerH);
         const timeSinceFired = (Date.now() - tower.lastFired) / 1000;
-        
-        // --- TOWER ARCHITECTURE ---
-        // 1. Broad Plinth
-        drawPrism(ctx, tower.x, tower.y, 0, baseSize * 0.5, 6, 8, '#0d1117', '#1a1d23');
-        // 2. Main Obelisk
-        drawPrism(ctx, tower.x, tower.y, 6, baseSize * 0.35, towerH - 12, 4, '#1a1d23', '#2d333b');
-        // Highlight effect when hovered or selected
         const isHovered = tower.id === hoveredTowerId;
         const isSelected = tower.id === selectedTowerId;
-        
-        // Recharge Pulse
         const rechargeProgress = Math.min(1, timeSinceFired / (1 / stats.fireRate));
         const pulseIntensity = Math.pow(1 - rechargeProgress, 2);
-    
-        // 3. Decorative Energy Band
-        const bandColor = (isHovered || isSelected) ? '#fff' : stats.color;
-        drawPrism(ctx, tower.x, tower.y, towerH * 0.6, baseSize * 0.4, 4, 8, bandColor, bandColor);
-        
-        // --- NEON EDGE HIGHLIGHTS ---
-        ctx.strokeStyle = (isHovered || isSelected) ? '#fff' : stats.color;
-        ctx.lineWidth = (isHovered || isSelected) ? 1.0 : 0.5;
-        
-        // Energy Pulse Glow
-        if (pulseIntensity > 0) {
+        const isSniper = tower.baseType === TowerType.SNIPER;
+        const isSplash = tower.baseType === TowerType.SPLASH;
+
+        // --- 0. GROUND SHADOW ---
+        {
+          const sp = toIso(tower.x, tower.y, 0);
           ctx.save();
-          ctx.shadowBlur = 4 * pulseIntensity;
-          ctx.shadowColor = stats.color;
-          drawPrism(ctx, tower.x, tower.y, towerH * 0.6, baseSize * 0.45, 4, 8, 'transparent', 'transparent', 0.25 * pulseIntensity, stats.color);
+          const sg = ctx.createRadialGradient(sp.x, sp.y + 5, 0, sp.x, sp.y + 5, baseSize * 1.2);
+          sg.addColorStop(0, 'rgba(0,0,0,0.55)');
+          sg.addColorStop(0.45, 'rgba(0,0,0,0.22)');
+          sg.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = sg;
+          ctx.beginPath();
+          ctx.ellipse(sp.x, sp.y + 5, baseSize * 1.2, baseSize * 0.6, 0, 0, Math.PI * 2);
+          ctx.fill();
           ctx.restore();
         }
-        const beamPt1 = toIso(tower.x, tower.y, 6);
-        const beamPt2 = toIso(tower.x, tower.y, towerH - 6);
-        ctx.globalAlpha = 0.4;
-        ctx.beginPath(); ctx.moveTo(beamPt1.x, beamPt1.y); ctx.lineTo(beamPt2.x, beamPt2.y); ctx.stroke();
-        ctx.globalAlpha = 1.0;
 
-        // --- TURRET PIVOT BASE ---
-        const pivotPt = toIso(tower.x, tower.y, towerH - 3);
-        ctx.fillStyle = '#0a0c10';
-        ctx.strokeStyle = '#2d333b';
-        ctx.beginPath();
-        const pr = baseSize * 0.25;
-        ctx.ellipse(pivotPt.x, pivotPt.y, pr, pr * 0.5, 0, 0, Math.PI * 2);
-        ctx.fill(); ctx.stroke();
+        // --- 1. PLINTH (8-sided base platform) ---
+        drawLitPrism(ctx, tower.x, tower.y, 0, baseSize * 0.52, 7, 8, '#0f1e30');
 
-        // --- COMPACT TURRET HEAD ---
-        ctx.save();
-        ctx.translate(topPt.x, topPt.y);
-
-        // Convert world-space angle to screen-space angle for isometric projection.
-        // The iso transform maps world direction (dx,dy) → screen (dx-dy)*ISO_SCALE, (dx+dy)*ISO_SCALE*0.5
-        const worldAngle = tower.currentAngle || -Math.PI / 2;
-        const wdx = Math.cos(worldAngle);
-        const wdy = Math.sin(worldAngle);
-        const screenAngle = Math.atan2((wdx + wdy) * ISO_SCALE * 0.5, (wdx - wdy) * ISO_SCALE);
-
-        const recoil = Math.max(0, 1 - timeSinceFired * 15) * 5;
-
-        ctx.rotate(screenAngle);
-        
-        // Compact modular head with multiple layers for 2.5D depth
-        // Shadow layer (Projected on tower body)
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
-        ctx.fillRect(-7 - recoil, 3, 16, 6);
-
-        // Main Head Body
-        ctx.fillStyle = '#1c2128';
-        ctx.strokeStyle = '#444c56';
-        ctx.lineWidth = 1;
-        drawRoundRect(ctx, -8 - recoil, -8, 16, 16, 3);
-        ctx.fill(); ctx.stroke();
-        
-        // Internal Glow (Core)
-        ctx.fillStyle = stats.color;
-        ctx.globalAlpha = 0.3;
-        ctx.beginPath(); ctx.arc(0 - recoil, 0, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 1.0;
-
-        // Top Detail (Sensor/Lens)
-        ctx.fillStyle = '#2d333b';
-        ctx.beginPath(); ctx.arc(-3 - recoil, 0, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#111';
-        ctx.beginPath(); ctx.arc(-3 - recoil, 0, 2, 0, Math.PI * 2); ctx.fill();
-
-        // Type-specific compact emitters
-        ctx.fillStyle = stats.color;
-        if (tower.type === TowerType.BASIC) {
-          // Double micro-nozzles
-          ctx.fillRect(8 - recoil, -7, 6, 4);
-          ctx.fillRect(8 - recoil, 3, 6, 4);
-          ctx.fillStyle = '#fff';
-          ctx.globalAlpha = 0.6;
-          ctx.fillRect(10 - recoil, -6, 2, 2);
-          ctx.fillRect(10 - recoil, 4, 2, 2);
-          ctx.globalAlpha = 1.0;
-        } else if (tower.type === TowerType.SNIPER) {
-          // Single precision lens (Extended)
-          ctx.fillStyle = '#30363d';
-          ctx.fillRect(8 - recoil, -3, 10, 6);
-          ctx.fillStyle = stats.color;
+        // AO collar where plinth meets obelisk
+        {
+          const aoP = toIso(tower.x, tower.y, 7);
+          ctx.save();
+          ctx.globalAlpha = 0.55;
           ctx.beginPath();
-          ctx.arc(16 - recoil, 0, 5, 0, Math.PI * 2);
+          ctx.ellipse(aoP.x, aoP.y, baseSize * 0.45, baseSize * 0.22, 0, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.8)';
           ctx.fill();
-          ctx.fillStyle = '#fff';
-          ctx.beginPath(); ctx.arc(17 - recoil, -1, 1.5, 0, Math.PI * 2); ctx.fill();
-        } else if (tower.type === TowerType.SPLASH) {
-          // Broad energy array
-          ctx.fillRect(8 - recoil, -10, 4, 20);
-          ctx.fillRect(10 - recoil, -6, 4, 12);
-          ctx.fillStyle = '#fff';
-          ctx.globalAlpha = 0.4;
-          ctx.fillRect(8 - recoil, -8, 1, 16);
-          ctx.globalAlpha = 1.0;
-          // Side cooling fins
-          ctx.fillStyle = '#222';
-          ctx.fillRect(-4 - recoil, -11, 8, 2);
-          ctx.fillRect(-4 - recoil, 9, 8, 2);
+          ctx.restore();
         }
 
-        // Muzzle Flash / Energy Pulse (Enhanced)
-        if (timeSinceFired < 0.05) {
-          ctx.shadowBlur = 25; ctx.shadowColor = stats.color;
-          ctx.fillStyle = '#fff';
-          ctx.beginPath(); ctx.arc(18 - recoil, 0, 10, 0, Math.PI * 2); ctx.fill();
-          ctx.shadowBlur = 0;
-        }
+        // --- 2. OBELISK (4-sided body, shape varies per tower type) ---
+        const oR = isSniper ? baseSize * 0.20 : isSplash ? baseSize * 0.31 : baseSize * 0.27;
+        const oH = isSniper ? towerH - 8  : isSplash ? towerH - 18 : towerH - 12;
+        drawLitPrism(ctx, tower.x, tower.y, 7, oR, oH, 4, '#0e1c30');
 
-        ctx.restore();
-
-        // Selected indicator (Ambient glow around base)
-        if (isSelected || isHovered) {
-          const selP = toIso(tower.x, tower.y, 2);
+        // Panel ribs — 1 rib at level 1, 2 at level 2+
+        const ribCount = tower.level >= 2 ? 2 : 1;
+        for (let ri = 0; ri < ribCount; ri++) {
+          const ribZ = 7 + oH * (ri === 0 ? 0.38 : 0.68);
+          const ribP = toIso(tower.x, tower.y, ribZ);
+          const rr = oR * 1.18;
           ctx.save();
           ctx.beginPath();
-          ctx.ellipse(selP.x, selP.y, baseSize * 0.8, baseSize * 0.4, 0, 0, Math.PI * 2);
-          ctx.strokeStyle = isSelected ? '#fff' : 'rgba(255,255,255,0.4)';
-          ctx.setLineDash(isHovered && !isSelected ? [4, 4] : []);
-          ctx.lineWidth = isSelected ? 2 : 1;
-          ctx.shadowBlur = isSelected ? 15 : 5; ctx.shadowColor = stats.color;
+          ctx.ellipse(ribP.x, ribP.y, rr, rr * 0.5, 0, 0, Math.PI * 2);
+          // dark groove
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+          ctx.stroke();
+          // bright rim on top edge
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(255,255,255,0.10)';
           ctx.stroke();
           ctx.restore();
         }
 
-        // Level Indicators (Dots on foundation)
-        ctx.fillStyle = stats.color;
-        for (let i = 0; i < tower.level; i++) {
-           const lpt = toIso(tower.x - baseSize/2 + 5, tower.y - baseSize/2 + 5 + i * 5, 8);
-           ctx.beginPath(); ctx.arc(lpt.x, lpt.y, 1.5, 0, Math.PI * 2); ctx.fill();
+        // --- 3. ENERGY BAND (glowing ring) ---
+        {
+          const bandZ = 7 + oH * 0.80;
+          const bP = toIso(tower.x, tower.y, bandZ);
+          const bRx = (oR + 3) * (1 / ISO_SCALE) * ISO_SCALE;
+          const bRy = (oR + 3) * 0.5;
+          ctx.save();
+          // Halo glow behind ring
+          ctx.globalAlpha = 0.18 + pulseIntensity * 0.28;
+          ctx.shadowBlur = 16 + 14 * pulseIntensity;
+          ctx.shadowColor = stats.color;
+          ctx.beginPath();
+          ctx.ellipse(bP.x, bP.y, bRx * 1.5, bRy * 1.5, 0, 0, Math.PI * 2);
+          ctx.fillStyle = stats.color;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          // Ring stroke
+          ctx.globalAlpha = 0.9 + pulseIntensity * 0.1;
+          ctx.beginPath();
+          ctx.ellipse(bP.x, bP.y, bRx, bRy, 0, 0, Math.PI * 2);
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = stats.color;
+          ctx.shadowBlur = 10 + 8 * pulseIntensity;
+          ctx.shadowColor = stats.color;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          // Inner specular arc
+          ctx.globalAlpha = 0.35;
+          ctx.beginPath();
+          ctx.ellipse(bP.x, bP.y, bRx * 0.6, bRy * 0.6, 0, 0, Math.PI * 2);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // --- 4. PIVOT BASE ---
+        {
+          const pivP = toIso(tower.x, tower.y, towerH - 3);
+          const pr = baseSize * 0.27;
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(pivP.x, pivP.y, pr, pr * 0.5, 0, 0, Math.PI * 2);
+          ctx.fillStyle = '#060a10';
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = '#1e3050';
+          ctx.stroke();
+          // specular
+          ctx.beginPath();
+          ctx.ellipse(pivP.x - 1, pivP.y - 1, pr * 0.45, pr * 0.22, 0, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.07)';
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // --- 5. TURRET HEAD ---
+        ctx.save();
+        ctx.translate(topPt.x, topPt.y);
+        const worldAngle = tower.currentAngle || -Math.PI / 2;
+        const wdx = Math.cos(worldAngle);
+        const wdy = Math.sin(worldAngle);
+        const screenAngle = Math.atan2((wdx + wdy) * ISO_SCALE * 0.5, (wdx - wdy) * ISO_SCALE);
+        const recoil = Math.max(0, 1 - timeSinceFired * 15) * 5;
+        ctx.rotate(screenAngle);
+
+        // Drop shadow under head
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(0, 6, 11, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (isSniper) {
+          // RAILGUN: sleek, elongated head + long single barrel
+          ctx.fillStyle = '#161228';
+          ctx.strokeStyle = '#4820a0';
+          ctx.lineWidth = 1.2;
+          drawRoundRect(ctx, -10 - recoil, -7, 17, 14, 2);
+          ctx.fill(); ctx.stroke();
+          // Top-down specular gradient
+          const hl = ctx.createLinearGradient(-10, -7, -10, 7);
+          hl.addColorStop(0, 'rgba(255,255,255,0.18)');
+          hl.addColorStop(0.4, 'rgba(255,255,255,0.03)');
+          hl.addColorStop(1, 'rgba(0,0,0,0.3)');
+          ctx.fillStyle = hl;
+          drawRoundRect(ctx, -10 - recoil, -7, 17, 14, 2);
+          ctx.fill();
+          // Optics housing
+          ctx.fillStyle = '#080412';
+          ctx.beginPath(); ctx.arc(-2 - recoil, 0, 5, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#5030b0'; ctx.lineWidth = 1; ctx.stroke();
+          ctx.fillStyle = stats.color; ctx.globalAlpha = 0.85;
+          ctx.beginPath(); ctx.arc(-2 - recoil, 0, 3, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#fff';
+          ctx.beginPath(); ctx.arc(-1 - recoil, -1, 1.1, 0, Math.PI * 2); ctx.fill();
+          // Long barrel
+          ctx.fillStyle = '#18183a';
+          ctx.fillRect(6 - recoil, -2.5, 16, 5);
+          const bg = ctx.createLinearGradient(6, -2.5, 6, 2.5);
+          bg.addColorStop(0, 'rgba(255,255,255,0.14)');
+          bg.addColorStop(0.5, 'rgba(255,255,255,0.02)');
+          bg.addColorStop(1, 'rgba(0,0,0,0.45)');
+          ctx.fillStyle = bg; ctx.fillRect(6 - recoil, -2.5, 16, 5);
+          // Muzzle ring
+          ctx.lineWidth = 1.5; ctx.strokeStyle = stats.color;
+          ctx.shadowBlur = 6; ctx.shadowColor = stats.color;
+          ctx.beginPath(); ctx.arc(22 - recoil, 0, 3.5, 0, Math.PI * 2); ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#050508';
+          ctx.beginPath(); ctx.arc(22 - recoil, 0, 2, 0, Math.PI * 2); ctx.fill();
+
+        } else if (isSplash) {
+          // NOVA MORTAR: chunky square housing + wide bore
+          ctx.fillStyle = '#201010';
+          ctx.strokeStyle = '#a02818';
+          ctx.lineWidth = 1.2;
+          drawRoundRect(ctx, -11 - recoil, -11, 22, 22, 4);
+          ctx.fill(); ctx.stroke();
+          const mhl = ctx.createLinearGradient(-11, -11, -11, 11);
+          mhl.addColorStop(0, 'rgba(255,255,255,0.12)');
+          mhl.addColorStop(1, 'rgba(0,0,0,0.35)');
+          ctx.fillStyle = mhl;
+          drawRoundRect(ctx, -11 - recoil, -11, 22, 22, 4);
+          ctx.fill();
+          // Cooling fins
+          ctx.fillStyle = '#140a08';
+          ctx.fillRect(-7 - recoil, -12, 14, 2);
+          ctx.fillRect(-7 - recoil,  10, 14, 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.05)';
+          ctx.fillRect(-7 - recoil, -12, 14, 0.5);
+          // Wide bore tube
+          ctx.fillStyle = '#0d0505';
+          ctx.fillRect(6 - recoil, -8, 9, 16);
+          ctx.fillStyle = stats.color; ctx.globalAlpha = 0.2;
+          ctx.fillRect(7 - recoil, -6, 6, 12);
+          ctx.globalAlpha = 1;
+          ctx.lineWidth = 1.5; ctx.strokeStyle = stats.color;
+          ctx.shadowBlur = 5; ctx.shadowColor = stats.color;
+          ctx.strokeRect(6 - recoil, -8, 9, 16);
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+          ctx.fillRect(6 - recoil, -8, 9, 2);
+
+        } else {
+          // RAPID VULCAN: squat aggressive head + double barrels
+          ctx.fillStyle = '#182438';
+          ctx.strokeStyle = '#2a4870';
+          ctx.lineWidth = 1.2;
+          drawRoundRect(ctx, -9 - recoil, -9, 18, 18, 3);
+          ctx.fill(); ctx.stroke();
+          const vhl = ctx.createLinearGradient(-9, -9, -9, 9);
+          vhl.addColorStop(0, 'rgba(255,255,255,0.14)');
+          vhl.addColorStop(0.45, 'rgba(255,255,255,0.02)');
+          vhl.addColorStop(1, 'rgba(0,0,0,0.28)');
+          ctx.fillStyle = vhl;
+          drawRoundRect(ctx, -9 - recoil, -9, 18, 18, 3);
+          ctx.fill();
+          // Sensor eye
+          ctx.fillStyle = '#040810';
+          ctx.beginPath(); ctx.arc(-2 - recoil, 0, 4.5, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = stats.color; ctx.globalAlpha = 0.8;
+          ctx.beginPath(); ctx.arc(-2 - recoil, 0, 2.8, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#fff';
+          ctx.beginPath(); ctx.arc(-1 - recoil, -1, 0.9, 0, Math.PI * 2); ctx.fill();
+          // Double barrels with tube shading
+          ([-6, 3] as number[]).forEach(oy => {
+            ctx.fillStyle = '#1e3456';
+            ctx.fillRect(8 - recoil, oy, 9, 4);
+            ctx.fillStyle = 'rgba(255,255,255,0.14)';
+            ctx.fillRect(8 - recoil, oy, 9, 1);
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            ctx.fillRect(8 - recoil, oy + 3, 9, 1);
+            ctx.fillStyle = '#0a1220';
+            ctx.fillRect(16 - recoil, oy - 0.5, 2, 5);
+          });
+        }
+
+        // Muzzle flash
+        if (timeSinceFired < 0.06) {
+          const flashAlpha = 1 - timeSinceFired / 0.06;
+          const flashX = isSniper ? 22 : isSplash ? 14 : 16;
+          const flashR = isSniper ? 7 : isSplash ? 11 : 9;
+          ctx.save();
+          ctx.globalAlpha = flashAlpha;
+          ctx.shadowBlur = 28; ctx.shadowColor = stats.color;
+          ctx.fillStyle = '#fff';
+          ctx.beginPath(); ctx.arc(flashX - recoil, 0, flashR, 0, Math.PI * 2); ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.restore();
+        }
+        ctx.restore();
+
+        // --- 6. SELECTION / HOVER RING ---
+        if (isSelected || isHovered) {
+          const selP = toIso(tower.x, tower.y, 1);
+          ctx.save();
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.ellipse(selP.x, selP.y, baseSize * 0.88, baseSize * 0.44, 0, 0, Math.PI * 2);
+          ctx.strokeStyle = isSelected ? stats.color : 'rgba(255,255,255,0.28)';
+          ctx.lineWidth = isSelected ? 2 : 1;
+          ctx.shadowBlur = isSelected ? 18 : 6; ctx.shadowColor = stats.color;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          // Corner tick marks when selected
+          if (isSelected) {
+            for (let qi = 0; qi < 4; qi++) {
+              const qa = (qi / 4) * Math.PI * 2;
+              const qx = selP.x + Math.cos(qa) * baseSize * 0.88;
+              const qy = selP.y + Math.sin(qa) * baseSize * 0.44;
+              const tx = Math.cos(qa), ty = Math.sin(qa);
+              ctx.beginPath();
+              ctx.moveTo(qx - ty * 4, qy + tx * 4);
+              ctx.lineTo(qx, qy);
+              ctx.lineTo(qx + ty * 4, qy - tx * 4);
+              ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+              ctx.stroke();
+            }
+          }
+          ctx.restore();
+        }
+
+        // --- 7. LEVEL DOTS ---
+        for (let li = 0; li < tower.level; li++) {
+          const lp = toIso(tower.x - baseSize / 2 + 4, tower.y - baseSize / 2 + 4 + li * 6, 9);
+          ctx.save();
+          ctx.shadowBlur = 5; ctx.shadowColor = stats.color;
+          ctx.fillStyle = stats.color;
+          ctx.beginPath(); ctx.arc(lp.x, lp.y, 2.2, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
         }
       }
     });
