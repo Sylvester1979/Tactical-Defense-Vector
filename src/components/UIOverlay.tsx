@@ -16,7 +16,8 @@ import {
   Cpu,
   MoveVertical,
   Crosshair,
-  Bomb
+  Bomb,
+  Lock
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
 import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode, DamageType } from '../types';
@@ -162,6 +163,12 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   React.useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logEntries]);
+
+  // Per-stat maxima across base towers — used to draw comparative stat bars.
+  const baseStatList = BASE_TOWER_TYPES.map(t => TOWER_STATS[t]);
+  const maxDmg = Math.max(...baseStatList.map(s => s.damage));
+  const maxRange = Math.max(...baseStatList.map(s => s.range));
+  const maxRof = Math.max(...baseStatList.map(s => s.fireRate));
 
   // Tower breakdown by base type
   const towerBreakdown = BASE_TOWER_TYPES.map(base => ({
@@ -401,76 +408,127 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 
                 const dmg = DMG_STYLE[stats.damageType];
                 const Icon = TOWER_ICON[type] ?? Target;
+                const locked = !isAffordable && !isSelected;
+                const statRows = [
+                  { k: 'DMG', v: `${stats.damage}`, pct: stats.damage / maxDmg },
+                  { k: 'RNG', v: `${stats.range}`, pct: stats.range / maxRange },
+                  { k: 'ROF', v: `${stats.fireRate}/s`, pct: stats.fireRate / maxRof },
+                ];
                 return (
                   <button
                     key={type}
                     onClick={() => setPlacingType(isSelected ? null : type)}
-                    className={`group relative w-full rounded-lg p-3 pl-4 flex gap-3 text-left transition-all duration-200 ${
-                      isSelected ? 'border border-transparent' : 'border border-white/[0.06] hover:border-white/[0.14] hover:-translate-y-0.5'
-                    } ${!isAffordable && !isSelected ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                    disabled={locked}
+                    className={`group relative w-full rounded-xl p-3 pl-4 text-left transition-all duration-200 overflow-hidden ${
+                      isSelected ? 'border border-transparent' : 'border border-white/[0.07] hover:border-white/[0.16] hover:-translate-y-0.5'
+                    } ${locked ? 'opacity-55 cursor-not-allowed' : ''}`}
                     style={{
                       background: isSelected
-                        ? `linear-gradient(135deg, ${stats.color}22, ${stats.color}06)`
-                        : 'rgba(255,255,255,0.018)',
-                      boxShadow: isSelected ? `0 0 0 1px ${stats.color}, 0 8px 24px -10px ${stats.color}aa` : undefined,
+                        ? `linear-gradient(135deg, ${stats.color}26, ${stats.color}05)`
+                        : 'rgba(255,255,255,0.02)',
+                      boxShadow: isSelected ? `0 0 0 1px ${stats.color}, 0 10px 30px -12px ${stats.color}, inset 0 1px 0 0 rgba(255,255,255,0.06)` : undefined,
                     }}
                   >
+                    {/* selected: ambient corner glow */}
+                    {isSelected && (
+                      <span
+                        className="pointer-events-none absolute -right-8 -top-8 w-24 h-24 rounded-full blur-2xl"
+                        style={{ backgroundColor: `${stats.color}40` }}
+                      />
+                    )}
                     {/* color rail */}
                     <span
-                      className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full transition-opacity"
-                      style={{ backgroundColor: stats.color, opacity: isSelected ? 1 : 0.45, boxShadow: isSelected ? `0 0 8px ${stats.color}` : undefined }}
+                      className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full transition-all"
+                      style={{ backgroundColor: stats.color, opacity: isSelected ? 1 : 0.4, boxShadow: isSelected ? `0 0 10px ${stats.color}` : undefined }}
                     />
-                    <div
-                      className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg border transition-transform group-hover:scale-105"
-                      style={{ background: `linear-gradient(135deg, ${stats.color}22, ${stats.color}08)`, borderColor: `${stats.color}33` }}
-                    >
-                      <Icon className="w-5 h-5" style={{ color: stats.color }} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-bold leading-tight truncate text-white/90">{stats.name}</p>
-                        <span
-                          className={`text-[10px] font-bold font-mono shrink-0 px-1.5 py-0.5 rounded ${isAffordable ? 'text-accent-cyan bg-accent-cyan/10' : 'text-accent-red bg-accent-red/10'}`}
-                        >
-                          ${stats.cost}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                        <span className={`text-[8px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${dmg.cls}`}>
-                          {dmg.label}
-                        </span>
-                        {stats.splashRadius && (
-                          <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
-                            SPLASH {stats.splashRadius}px
-                          </span>
-                        )}
-                        {stats.isPiercing && (
-                          <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
-                            PIERCE
-                          </span>
-                        )}
-                        {stats.slowEffect && (
-                          <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-cyan-500/10 border-cyan-500/20 text-cyan-400/70">
-                            SLOW {stats.slowEffect * 100}%
-                          </span>
-                        )}
-                        {stats.burnDamage && (
-                          <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-orange-500/10 border-orange-500/20 text-orange-400/70">
-                            BURN {stats.burnDamage}/s
+
+                    {/* HEADER ROW */}
+                    <div className="relative flex gap-3 items-start">
+                      <div
+                        className="relative w-12 h-12 shrink-0 flex items-center justify-center rounded-xl border transition-transform group-hover:scale-105"
+                        style={{
+                          background: `radial-gradient(circle at 35% 30%, ${stats.color}33, ${stats.color}0a 70%)`,
+                          borderColor: `${stats.color}3d`,
+                          boxShadow: `inset 0 0 12px ${stats.color}1f`,
+                        }}
+                      >
+                        <Icon className="w-6 h-6" style={{ color: stats.color, filter: `drop-shadow(0 0 4px ${stats.color}99)` }} />
+                        {locked && (
+                          <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/55">
+                            <Lock className="w-4 h-4 text-white/70" />
                           </span>
                         )}
                       </div>
-                      <p className="text-[9px] text-white/28 font-mono mt-1 leading-snug line-clamp-1 group-hover:line-clamp-none transition-all">
-                        {stats.description}
-                      </p>
-                      <p className="text-[8px] font-mono text-white/28 mt-1 tabular-nums">
-                        DMG <span className="text-white/55">{stats.damage}</span>
-                        <span className="mx-1.5 opacity-30">·</span>
-                        RNG <span className="text-white/55">{stats.range}</span>
-                        <span className="mx-1.5 opacity-30">·</span>
-                        ROF <span className="text-white/55">{stats.fireRate}/s</span>
-                      </p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[15px] font-bold leading-tight truncate text-white tracking-tight">{stats.name}</p>
+                          <span
+                            className="text-[11px] font-bold font-mono shrink-0 px-2 py-0.5 rounded-md tabular-nums"
+                            style={{
+                              color: isAffordable ? stats.color : '#ff4d4d',
+                              backgroundColor: isAffordable ? `${stats.color}1f` : 'rgba(255,77,77,0.12)',
+                              boxShadow: isAffordable ? `0 0 0 1px ${stats.color}33` : '0 0 0 1px rgba(255,77,77,0.25)',
+                            }}
+                          >
+                            ${stats.cost}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                          <span className={`text-[8px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${dmg.cls}`}>
+                            {dmg.label}
+                          </span>
+                          {stats.splashRadius && (
+                            <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/55">
+                              SPLASH {stats.splashRadius}px
+                            </span>
+                          )}
+                          {stats.isPiercing && (
+                            <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/55">
+                              PIERCE
+                            </span>
+                          )}
+                          {stats.slowEffect && (
+                            <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-cyan-500/10 border-cyan-500/20 text-cyan-400/75">
+                              SLOW {stats.slowEffect * 100}%
+                            </span>
+                          )}
+                          {stats.burnDamage && (
+                            <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-orange-500/10 border-orange-500/20 text-orange-400/75">
+                              BURN {stats.burnDamage}/s
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
+
+                    {/* COMPARATIVE STAT BARS */}
+                    <div className="grid grid-cols-3 gap-2.5 mt-2.5">
+                      {statRows.map(({ k, v, pct }) => (
+                        <div key={k}>
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-[7px] font-mono text-white/35 tracking-[0.1em]">{k}</span>
+                            <span className="text-[10px] font-mono font-bold text-white/85 tabular-nums leading-none">{v}</span>
+                          </div>
+                          <div className="mt-1 h-[3px] rounded-full bg-white/[0.08] overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-300"
+                              style={{ width: `${Math.max(8, Math.min(100, pct * 100))}%`, backgroundColor: stats.color, boxShadow: `0 0 6px ${stats.color}aa` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* EXPANDED DETAIL (selected only — full text, no truncation) */}
+                    {isSelected && (
+                      <>
+                        <p className="text-[10px] text-white/50 font-mono mt-3 leading-relaxed">{stats.description}</p>
+                        <div className="mt-2.5 flex items-center gap-1.5 text-[8px] font-mono uppercase tracking-[0.12em]" style={{ color: stats.color }}>
+                          <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: stats.color, boxShadow: `0 0 6px ${stats.color}` }} />
+                          Click map to deploy · ESC to cancel
+                        </div>
+                      </>
+                    )}
                   </button>
                 );
               })}
