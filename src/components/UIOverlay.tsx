@@ -205,24 +205,51 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
         {/* hairline cyan glow along the bottom edge */}
         <div className="pointer-events-none absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-accent-cyan/20 to-transparent" />
 
-        {/* ── LOGO ── */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center border border-accent-cyan/25"
-            style={{ background: 'radial-gradient(circle at 35% 30%, rgba(0,242,255,0.18), rgba(0,242,255,0.04))', boxShadow: '0 0 14px rgba(0,242,255,0.15)' }}
-          >
-            <Cpu className="w-4 h-4 text-accent-cyan" style={{ filter: 'drop-shadow(0 0 4px rgba(0,242,255,0.9))' }} />
+        {/* ── CENTER TITLE ── absolutely centered so side groups never shift it */}
+        <div className="pointer-events-none select-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-4">
+          {/* left decorative rule */}
+          <div className="hidden xl:flex items-center gap-2">
+            <span className="h-px w-12 bg-gradient-to-r from-transparent to-accent-cyan/45" />
+            <span className="w-[7px] h-[7px] rotate-45 bg-accent-cyan/80" style={{ boxShadow: '0 0 10px #00f2ff' }} />
           </div>
-          <div className="flex flex-col leading-none">
-            <span className="text-[12px] font-black tracking-[0.22em] text-white font-mono">TDV</span>
-            <span className="text-[7px] tracking-[0.22em] uppercase text-white/25 font-mono">Defense Matrix</span>
+
+          <div className="flex flex-col items-center leading-none">
+            <h1 className="relative whitespace-nowrap">
+              {/* glow underlay */}
+              <span
+                className="absolute inset-0 text-[23px] font-black italic tracking-[0.17em] text-accent-cyan blur-[10px] opacity-60"
+                aria-hidden
+              >
+                TACTICAL DEFENSE VECTOR
+              </span>
+              {/* chrome→cyan gradient face */}
+              <span
+                className="relative text-[23px] font-black italic tracking-[0.17em]"
+                style={{
+                  background: 'linear-gradient(180deg, #ffffff 0%, #d4f7ff 42%, #4fe3ff 72%, #00c8df 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                  filter: 'drop-shadow(0 1px 0 rgba(0,0,0,0.5)) drop-shadow(0 0 16px rgba(0,242,255,0.35))',
+                }}
+              >
+                TACTICAL DEFENSE VECTOR
+              </span>
+            </h1>
+            <span className="text-[7px] tracking-[0.62em] uppercase text-accent-cyan/45 font-mono mt-[5px] pl-[0.62em]">
+              Aegis Defense Matrix
+            </span>
+          </div>
+
+          {/* right decorative rule */}
+          <div className="hidden xl:flex items-center gap-2">
+            <span className="w-[7px] h-[7px] rotate-45 bg-accent-cyan/80" style={{ boxShadow: '0 0 10px #00f2ff' }} />
+            <span className="h-px w-12 bg-gradient-to-l from-transparent to-accent-cyan/45" />
           </div>
         </div>
 
-        <div className="w-px h-7 bg-white/[0.08] shrink-0" />
-
-        {/* ── STAT PILLS ── */}
-        <div className="flex items-stretch gap-2 flex-1 min-w-0">
+        {/* ── STAT PILLS (left) ── */}
+        <div className="flex items-stretch gap-2 shrink-0">
 
           {/* Credits */}
           <div className="flex items-center gap-2.5 px-3.5 rounded-xl bg-white/[0.04] border border-white/[0.06]">
@@ -301,7 +328,10 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               </div>
             );
           })()}
-        </div>
+        </div>{/* end stat pills */}
+
+        {/* push controls to far right */}
+        <div className="flex-1" />
 
         {/* ── CONTROLS ── */}
         <div className="flex items-center gap-2 shrink-0">
