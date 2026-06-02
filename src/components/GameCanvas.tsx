@@ -57,6 +57,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cacheRef = useRef<HTMLCanvasElement | null>(null);
+  const bloomRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Shockwave rings — purely visual, driven from enemy ID diffs each frame.
+  interface Shockwave { x: number; y: number; h: number; life: number; maxR: number; color: string; }
+  const shockwavesRef = useRef<Shockwave[]>([]);
+  // Stores last-known position/color of every live enemy so we can spawn a ring on death.
+  const prevEnemySnapshotRef = useRef<Map<string, Shockwave>>(new Map());
+  const lastFrameTimeRef = useRef<number>(performance.now());
+
   const [hoveredTowerId, setHoveredTowerId] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<Point>({ x: 0, y: 0 });
 
@@ -269,6 +278,43 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       }
     }
+
+    // ── Bloom canvas: 1/4 resolution offscreen target ──────────────────────
+    if (!bloomRef.current) {
+      bloomRef.current = document.createElement('canvas');
+      bloomRef.current.width  = CANVAS_WIDTH  >> 2;   // 250
+      bloomRef.current.height = CANVAS_HEIGHT >> 2;   // 200
+    }
+
+    // ── Delta time for shockwave animation ──────────────────────────────────
+    const now = performance.now();
+    const dt  = Math.min(0.05, (now - lastFrameTimeRef.current) / 1000);
+    lastFrameTimeRef.current = now;
+
+    // ── Shockwave: build current snapshot, detect deaths ───────────────────
+    const roadHeightSnap = 15; // keep in sync with roadHeight below
+    const currSnapshot = new Map<string, Shockwave>();
+    enemies.forEach(e => {
+      const isFlyer = e.type === 'PHANTOM' || e.type === 'SCOUT' || e.type === 'INTERCEPTOR';
+      const animT  = (now / 1000) * 2;
+      const floatH = isFlyer ? roadHeightSnap + 15 + Math.sin(animT * 5) * 5 : roadHeightSnap + (ENEMY_TYPES[e.type].size / 4);
+      currSnapshot.set(e.id, {
+        x: e.x, y: e.y, h: floatH,
+        life: 0, maxR: ENEMY_TYPES[e.type].size * 3.8,
+        color: ENEMY_TYPES[e.type].color,
+      });
+    });
+    prevEnemySnapshotRef.current.forEach((snap, id) => {
+      if (!currSnapshot.has(id)) {
+        shockwavesRef.current.push({ ...snap, life: 1 });
+      }
+    });
+    prevEnemySnapshotRef.current = currSnapshot;
+
+    // Advance & cull shockwaves
+    shockwavesRef.current = shockwavesRef.current
+      .map(w => ({ ...w, life: w.life - dt * 2.8 }))
+      .filter(w => w.life > 0);
 
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     ctx.save();
@@ -1156,6 +1202,36 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     });
     ctx.globalAlpha = 1.0;
 
+    // ── Shockwave rings ─────────────────────────────────────────────────────
+    shockwavesRef.current.forEach(w => {
+      const progress = 1 - w.life;                        // 0 (born) → 1 (dead)
+      const pt = toIso(w.x, w.y, w.h);
+      const rx = w.maxR * progress * ISO_SCALE;
+      const ry = rx * 0.5;
+      ctx.save();
+      // Primary ring
+      ctx.globalAlpha = w.life * 0.85;
+      ctx.strokeStyle = w.color;
+      ctx.lineWidth   = 2.5 * w.life;
+      ctx.shadowBlur  = 18 * w.life;
+      ctx.shadowColor = w.color;
+      ctx.beginPath();
+      ctx.ellipse(pt.x, pt.y, Math.max(0.1, rx), Math.max(0.1, ry), 0, 0, Math.PI * 2);
+      ctx.stroke();
+      // Secondary ring — slightly delayed, thinner
+      if (progress > 0.18) {
+        const p2 = (progress - 0.18) / 0.82;
+        const rx2 = w.maxR * p2 * ISO_SCALE;
+        ctx.globalAlpha = w.life * 0.45;
+        ctx.lineWidth   = 1.2 * w.life;
+        ctx.shadowBlur  = 10 * w.life;
+        ctx.beginPath();
+        ctx.ellipse(pt.x, pt.y, Math.max(0.1, rx2), Math.max(0.1, rx2 * 0.5), 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+
     // Draw Floating Texts
     floatingTexts.forEach(t => {
       const pt = toIso(t.x, t.y, 30 + (1 - t.life) * 50);
@@ -1166,6 +1242,42 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.fillText(t.text, pt.x, pt.y);
     });
     ctx.globalAlpha = 1.0;
+
+    // ── BLOOM PASS ───────────────────────────────────────────────────────────
+    // Two-layer HDR bloom:
+    //   · Extract bright pixels at 1/4 resolution with heavy brightness + saturate
+    //   · Layer 1 — tight inner glow: upscale the 1/4 canvas directly (screen blend)
+    //   · Layer 2 — wide atmospheric halo: apply extra blur on composite (screen blend)
+    // Total cost: one small drawImage filter + two upscaling composites per frame.
+    {
+      const bloom = bloomRef.current;
+      if (bloom) {
+        const bctx = bloom.getContext('2d');
+        if (bctx) {
+          bctx.clearRect(0, 0, bloom.width, bloom.height);
+          // Extract: downsample + amplify bright neon elements
+          bctx.filter = 'blur(3px) brightness(7) saturate(3.5)';
+          bctx.drawImage(canvas, 0, 0, bloom.width, bloom.height);
+          bctx.filter = 'none';
+
+          // Layer 1: tight inner bloom (1/4→full upscale = effectively ~12px blur)
+          ctx.save();
+          ctx.globalCompositeOperation = 'screen';
+          ctx.globalAlpha = 0.40;
+          ctx.drawImage(bloom, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+          ctx.restore();
+
+          // Layer 2: wide atmospheric halo (extra canvas-level blur on the way back)
+          ctx.save();
+          ctx.globalCompositeOperation = 'screen';
+          ctx.globalAlpha = 0.22;
+          ctx.filter = 'blur(20px)';
+          ctx.drawImage(bloom, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+          ctx.filter = 'none';
+          ctx.restore();
+        }
+      }
+    }
 
     // Post-Process (Cinematic Vignette & Scanlines)
     const renderPostProcess = () => {
