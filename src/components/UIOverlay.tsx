@@ -501,27 +501,26 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                       </div>
                     </div>
 
-                    {/* COMPARATIVE STAT BARS */}
-                    <div className="grid grid-cols-3 gap-2.5 mt-2.5">
-                      {statRows.map(({ k, v, pct }) => (
-                        <div key={k}>
-                          <div className="flex items-baseline justify-between">
-                            <span className="text-[7px] font-mono text-white/35 tracking-[0.1em]">{k}</span>
-                            <span className="text-[10px] font-mono font-bold text-white/85 tabular-nums leading-none">{v}</span>
-                          </div>
-                          <div className="mt-1 h-[3px] rounded-full bg-white/[0.08] overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-300"
-                              style={{ width: `${Math.max(8, Math.min(100, pct * 100))}%`, backgroundColor: stats.color, boxShadow: `0 0 6px ${stats.color}aa` }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* EXPANDED DETAIL (selected only — full text, no truncation) */}
+                    {/* EXPANDED DETAIL — selected only: stat bars + full description.
+                        Collapsed cards stay compact so all weapons fit without scrolling. */}
                     {isSelected && (
                       <>
+                        <div className="grid grid-cols-3 gap-2.5 mt-3">
+                          {statRows.map(({ k, v, pct }) => (
+                            <div key={k}>
+                              <div className="flex items-baseline justify-between">
+                                <span className="text-[7px] font-mono text-white/35 tracking-[0.1em]">{k}</span>
+                                <span className="text-[10px] font-mono font-bold text-white/85 tabular-nums leading-none">{v}</span>
+                              </div>
+                              <div className="mt-1 h-[3px] rounded-full bg-white/[0.08] overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all duration-300"
+                                  style={{ width: `${Math.max(8, Math.min(100, pct * 100))}%`, backgroundColor: stats.color, boxShadow: `0 0 6px ${stats.color}aa` }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                         <p className="text-[10px] text-white/50 font-mono mt-3 leading-relaxed">{stats.description}</p>
                         <div className="mt-2.5 flex items-center gap-1.5 text-[8px] font-mono uppercase tracking-[0.12em]" style={{ color: stats.color }}>
                           <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: stats.color, boxShadow: `0 0 6px ${stats.color}` }} />
