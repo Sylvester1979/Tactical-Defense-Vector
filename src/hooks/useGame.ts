@@ -19,7 +19,9 @@ import {
   PATH, 
   TOWER_STATS, 
   ENEMY_TYPES, 
-  WAVES 
+  WAVES,
+  RELOCATION_FEE,
+  getSellValue
 } from '../constants';
 
 export function useGame() {
@@ -34,6 +36,7 @@ export function useGame() {
     relocatingTowerId: null,
     shakeTime: 0,
     currentWaveModifier: WaveModifier.NONE,
+    gameSpeed: 1,
   });
 
   const [towers, setTowers] = useState<TowerInstance[]>([]);
@@ -60,6 +63,8 @@ export function useGame() {
   const spawnTimerRef = useRef<number>(0);
   const enemiesToSpawnRef = useRef<number>(0);
   const currentWaveRef = useRef<any>(null);
+  // Mirrors waveActive synchronously so multiple sim steps per frame can't double-award the wave bonus
+  const waveActiveRef = useRef(false);
 
   // Helper: Create particles
   const createExplosion = useCallback((x: number, y: number, color: string, count: number = 10) => {
@@ -178,6 +183,7 @@ export function useGame() {
     enemiesToSpawnRef.current = effectiveCount;
     currentWaveRef.current = { ...wave, modifier };
     spawnTimerRef.current = 0;
+    waveActiveRef.current = true;
     setWaveActive(true);
     setGameState(prev => ({ ...prev, isPaused: false, isWaveReady: false, waveNumber, currentWaveModifier: modifier }));
   }, [waveActive, gameState.waveNumber, gameState.isGameOver]);
@@ -210,6 +216,7 @@ export function useGame() {
       currentAngle: -Math.PI / 2,
       baseType: type,
       targetingMode: TargetingMode.FIRST,
+      invested: stats.cost,
     };
 
     setTowers(prev => [...prev, newTower]);
@@ -229,7 +236,7 @@ export function useGame() {
     const upgradeCost = Math.floor(stats.cost * 0.7 * tower.level);
     
     if (gameState.money >= upgradeCost) {
-      setTowers(prev => prev.map(t => t.id === id ? { ...t, level: t.level + 1 } : t));
+      setTowers(prev => prev.map(t => t.id === id ? { ...t, level: t.level + 1, invested: t.invested + upgradeCost } : t));
       setGameState(prev => ({ ...prev, money: prev.money - upgradeCost }));
       createFloatingText(tower.x, tower.y - 20, "UPGRADED!", "#00f2ff");
     }
@@ -243,7 +250,7 @@ export function useGame() {
     const cost = stats.cost; // Branching cost
 
     if (gameState.money >= cost) {
-      setTowers(prev => prev.map(t => t.id === id ? { ...t, type: newType, level: 1 } : t));
+      setTowers(prev => prev.map(t => t.id === id ? { ...t, type: newType, level: 1, invested: t.invested + cost } : t));
       setGameState(prev => ({ ...prev, money: prev.money - cost }));
       createExplosion(tower.x, tower.y, stats.color, 20);
       createFloatingText(tower.x, tower.y - 20, stats.name.toUpperCase(), stats.color);
@@ -254,8 +261,7 @@ export function useGame() {
     const tower = towers.find(t => t.id === id);
     if (!tower) return;
     
-    const stats = TOWER_STATS[tower.type];
-    const sellValue = Math.floor(stats.cost * 0.5 + (tower.level - 1) * stats.cost * 0.3);
+    const sellValue = getSellValue(tower);
     
     setTowers(prev => prev.filter(t => t.id !== id));
     setGameState(prev => ({ ...prev, money: prev.money + sellValue, selectedTowerId: null, relocatingTowerId: null }));
@@ -263,7 +269,7 @@ export function useGame() {
   }, [towers, createFloatingText]);
 
   const startRelocation = useCallback((id: string) => {
-    if (gameState.money < 40) { // Using standard relocation fee
+    if (gameState.money < RELOCATION_FEE) {
       createFloatingText(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, "NOT ENOUGH ENERGY", "#ff4d4d");
       return;
     }
@@ -292,7 +298,7 @@ export function useGame() {
     setTowers(prev => prev.map(t => t.id === id ? { ...t, x, y } : t));
     setGameState(prev => ({ 
       ...prev, 
-      money: prev.money - 40, // Match CONST
+      money: prev.money - RELOCATION_FEE,
       relocatingTowerId: null,
       selectedTowerId: id 
     }));
@@ -319,321 +325,339 @@ export function useGame() {
   const update = useCallback((time: number) => {
     if (lastTimeRef.current !== undefined) {
       const dt = Math.min(0.05, (time - lastTimeRef.current) / 1000); // Bulletproof dt cap
-      const currentGameState = gameStateRef.current;
+      // Fast-forward runs several fixed steps per frame instead of a bigger dt,
+      // so fast projectiles can't tunnel past their collision radius
+      const steps = gameStateRef.current.gameSpeed || 1;
+
+      for (let step = 0; step < steps; step++) {
+        const currentGameState = gameStateRef.current;
       
-      if (!currentGameState.isPaused && !currentGameState.isGameOver) {
-        let currentEnemies = [...enemiesRef.current];
-        let currentTowers = [...towersRef.current];
-        let currentProjectiles = [...projectilesRef.current];
-        let moneyEarned = 0;
-        let livesLost = 0;
-        let newShake = currentGameState.shakeTime;
+        if (!currentGameState.isPaused && !currentGameState.isGameOver) {
+          let currentEnemies = [...enemiesRef.current];
+          let currentTowers = [...towersRef.current];
+          let currentProjectiles = [...projectilesRef.current];
+          let moneyEarned = 0;
+          let livesLost = 0;
+          let newShake = currentGameState.shakeTime;
 
-        // 1. Spawning
-        if (enemiesToSpawnRef.current > 0 && currentWaveRef.current) {
-          spawnTimerRef.current += dt;
-          const wave = currentWaveRef.current;
-          if (spawnTimerRef.current >= wave.interval) {
-            spawnTimerRef.current = 0;
-            enemiesToSpawnRef.current--;
+          // 1. Spawning
+          if (enemiesToSpawnRef.current > 0 && currentWaveRef.current) {
+            spawnTimerRef.current += dt;
+            const wave = currentWaveRef.current;
+            if (spawnTimerRef.current >= wave.interval) {
+              spawnTimerRef.current = 0;
+              enemiesToSpawnRef.current--;
             
-            const randomType = wave.enemyTypes[Math.floor(Math.random() * wave.enemyTypes.length)];
-            const enemyType = ENEMY_TYPES[randomType];
-            const waveNumber = currentGameState.waveNumber || 1;
-            // Slightly softer health scaling for early game
-            const scalingFactor = Math.max(0, waveNumber - 2) * 0.10;
-            const mod = (currentWaveRef.current?.modifier ?? WaveModifier.NONE) as WaveModifier;
-            const healthMult  = mod === WaveModifier.SWARM ? 0.5 : mod === WaveModifier.ELITE ? 2.0 : 1.0;
-            const speedMult   = mod === WaveModifier.RUSH  ? 1.6 : 1.0;
-            const rewardMult  = mod === WaveModifier.ELITE ? 1.5 : 1.0;
-            const baseHealth  = enemyType.health * (1 + scalingFactor) * healthMult;
-            currentEnemies.push({
-              id: `e-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
-              type: randomType,
-              health: baseHealth,
-              maxHealth: baseHealth,
-              x: PATH[0].x,
-              y: PATH[0].y,
-              pathIndex: 0,
-              distanceTraveled: 0,
-              lastHitTime: 0,
-              hitAngle: 0,
-              slowDuration: 0,
-              slowMultiplier: 1,
-              burnDuration: 0,
-              burnDamagePerSec: 0,
-              speedMultiplier: speedMult,
-              rewardMultiplier: rewardMult,
-            });
-          }
-        }
-
-        // 2. Movement & Path Logic
-        currentEnemies = currentEnemies.map(enemy => {
-          const enemyType = ENEMY_TYPES[enemy.type];
-          
-          let slowMult = 1;
-          let newSlowDuration = Math.max(0, enemy.slowDuration - dt);
-          if (newSlowDuration > 0) {
-            slowMult = enemy.slowMultiplier;
-          }
-
-          // Damage Over Time (Burn)
-          let currentHealth = enemy.health;
-          let newBurnDuration = Math.max(0, enemy.burnDuration - dt);
-          if (newBurnDuration > 0) {
-            currentHealth -= enemy.burnDamagePerSec * dt;
-          }
-
-          const waveSpeedMult = enemy.speedMultiplier ?? 1;
-          const newDist = enemy.distanceTraveled + (enemyType.speed * waveSpeedMult * slowMult) * dt;
-          const pos = moveOnPath(newDist);
-          return { 
-            ...enemy, 
-            health: currentHealth,
-            distanceTraveled: newDist, 
-            x: pos.x, 
-            y: pos.y, 
-            slowDuration: newSlowDuration,
-            burnDuration: newBurnDuration
-          };
-        }).filter(enemy => {
-           if (enemy.distanceTraveled >= pathLength) {
-             livesLost++;
-             newShake = 0.3;
-             return false;
-           }
-           return true;
-        });
-
-        // 3. Projectiles (Collision & Movement)
-        const nextProjs: Projectile[] = [];
-        currentProjectiles.forEach(p => {
-          const dx = p.targetX - p.x;
-          const dy = p.targetY - p.y;
-          const distToDest = Math.sqrt(dx * dx + dy * dy);
-          const moveStep = p.speed * dt;
-          
-          let collisionEnemy: EnemyInstance | null = null;
-          let targetsHit: EnemyInstance[] = [];
-
-          for (const enemy of currentEnemies) {
-            if (p.hitEnemyIds?.includes(enemy.id)) continue;
-            
-            const d = getDistance(p, enemy);
-            if (d < 24) { // Wider radius compensates for frame-rate discretization
-              if (p.isPiercing) {
-                targetsHit.push(enemy);
-                p.hitEnemyIds = [...(p.hitEnemyIds || []), enemy.id];
-              } else {
-                collisionEnemy = enemy;
-                break;
-              }
-            }
-          }
-
-          const hasHit = collisionEnemy || targetsHit.length > 0 || moveStep >= distToDest;
-
-          if (hasHit) {
-            const hitX = collisionEnemy ? collisionEnemy.x : (targetsHit.length > 0 ? targetsHit[0].x : p.targetX);
-            const hitY = collisionEnemy ? collisionEnemy.y : (targetsHit.length > 0 ? targetsHit[0].y : p.targetY);
-            
-            if (collisionEnemy || targetsHit.length > 0) {
-              createExplosion(hitX, hitY, TOWER_STATS[p.type].color, p.splashRadius ? 15 : 6);
-            }
-            
-            const processHit = (e: EnemyInstance, dmg: number) => {
-              const enemyType = ENEMY_TYPES[e.type];
-              const resistance = enemyType.resistances?.[p.damageType] ?? 1;
-              const finalDmg = dmg * resistance;
-
-              const angle = Math.atan2(e.y - p.y, e.x - p.x);
-              let nextE = { ...e, health: e.health - finalDmg, lastHitTime: Date.now(), hitAngle: angle };
-              
-              if (p.slowEffect) {
-                nextE.slowDuration = 2.0; // 2 seconds of slow
-                nextE.slowMultiplier = p.slowEffect;
-              }
-
-              if (p.burnDamage && p.burnDuration) {
-                nextE.burnDuration = p.burnDuration;
-                nextE.burnDamagePerSec = p.burnDamage;
-              }
-
-              return nextE;
-            };
-
-            if (p.splashRadius) {
-              currentEnemies = currentEnemies.map(e => {
-                const d = Math.sqrt((e.x - hitX) ** 2 + (e.y - hitY) ** 2);
-                if (d <= p.splashRadius!) {
-                  return processHit(e, p.damage);
-                }
-                return e;
+              const randomType = wave.enemyTypes[Math.floor(Math.random() * wave.enemyTypes.length)];
+              const enemyType = ENEMY_TYPES[randomType];
+              const waveNumber = currentGameState.waveNumber || 1;
+              // Slightly softer health scaling for early game
+              const scalingFactor = Math.max(0, waveNumber - 2) * 0.10;
+              const mod = (currentWaveRef.current?.modifier ?? WaveModifier.NONE) as WaveModifier;
+              const healthMult  = mod === WaveModifier.SWARM ? 0.5 : mod === WaveModifier.ELITE ? 2.0 : 1.0;
+              const speedMult   = mod === WaveModifier.RUSH  ? 1.6 : 1.0;
+              const rewardMult  = mod === WaveModifier.ELITE ? 1.5 : 1.0;
+              const baseHealth  = enemyType.health * (1 + scalingFactor) * healthMult;
+              currentEnemies.push({
+                id: `e-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
+                type: randomType,
+                health: baseHealth,
+                maxHealth: baseHealth,
+                x: PATH[0].x,
+                y: PATH[0].y,
+                pathIndex: 0,
+                distanceTraveled: 0,
+                lastHitTime: 0,
+                hitAngle: 0,
+                slowDuration: 0,
+                slowMultiplier: 1,
+                burnDuration: 0,
+                burnDamagePerSec: 0,
+                speedMultiplier: speedMult,
+                rewardMultiplier: rewardMult,
               });
-            } else if (collisionEnemy) {
-              currentEnemies = currentEnemies.map(e => (e.id === collisionEnemy!.id ? processHit(e, p.damage) : e));
-            } else if (targetsHit.length > 0) {
-              const hitIds = targetsHit.map(t => t.id);
-              currentEnemies = currentEnemies.map(e => (hitIds.includes(e.id) ? processHit(e, p.damage) : e));
+            }
+          }
+
+          // 2. Movement & Path Logic
+          currentEnemies = currentEnemies.map(enemy => {
+            const enemyType = ENEMY_TYPES[enemy.type];
+          
+            let slowMult = 1;
+            let newSlowDuration = Math.max(0, enemy.slowDuration - dt);
+            if (newSlowDuration > 0) {
+              slowMult = enemy.slowMultiplier;
             }
 
-            if (!p.isPiercing || moveStep >= distToDest) {
-               // Remove projectile
+            // Damage Over Time (Burn)
+            let currentHealth = enemy.health;
+            let newBurnDuration = Math.max(0, enemy.burnDuration - dt);
+            if (newBurnDuration > 0) {
+              currentHealth -= enemy.burnDamagePerSec * dt;
+            }
+
+            const waveSpeedMult = enemy.speedMultiplier ?? 1;
+            const newDist = enemy.distanceTraveled + (enemyType.speed * waveSpeedMult * slowMult) * dt;
+            const pos = moveOnPath(newDist);
+            return { 
+              ...enemy, 
+              health: currentHealth,
+              distanceTraveled: newDist, 
+              x: pos.x, 
+              y: pos.y, 
+              slowDuration: newSlowDuration,
+              burnDuration: newBurnDuration
+            };
+          }).filter(enemy => {
+             if (enemy.distanceTraveled >= pathLength) {
+               livesLost++;
+               newShake = 0.3;
+               return false;
+             }
+             return true;
+          });
+
+          // 3. Projectiles (Collision & Movement)
+          const nextProjs: Projectile[] = [];
+          currentProjectiles.forEach(p => {
+            const dx = p.targetX - p.x;
+            const dy = p.targetY - p.y;
+            const distToDest = Math.sqrt(dx * dx + dy * dy);
+            const moveStep = p.speed * dt;
+          
+            let collisionEnemy: EnemyInstance | null = null;
+            let targetsHit: EnemyInstance[] = [];
+
+            for (const enemy of currentEnemies) {
+              if (p.hitEnemyIds?.includes(enemy.id)) continue;
+            
+              const d = getDistance(p, enemy);
+              if (d < 24) { // Wider radius compensates for frame-rate discretization
+                if (p.isPiercing) {
+                  targetsHit.push(enemy);
+                  p.hitEnemyIds = [...(p.hitEnemyIds || []), enemy.id];
+                } else {
+                  collisionEnemy = enemy;
+                  break;
+                }
+              }
+            }
+
+            const hasHit = collisionEnemy || targetsHit.length > 0 || moveStep >= distToDest;
+
+            if (hasHit) {
+              const hitX = collisionEnemy ? collisionEnemy.x : (targetsHit.length > 0 ? targetsHit[0].x : p.targetX);
+              const hitY = collisionEnemy ? collisionEnemy.y : (targetsHit.length > 0 ? targetsHit[0].y : p.targetY);
+            
+              if (collisionEnemy || targetsHit.length > 0) {
+                createExplosion(hitX, hitY, TOWER_STATS[p.type].color, p.splashRadius ? 15 : 6);
+              }
+            
+              const processHit = (e: EnemyInstance, dmg: number) => {
+                const enemyType = ENEMY_TYPES[e.type];
+                const resistance = enemyType.resistances?.[p.damageType] ?? 1;
+                const finalDmg = dmg * resistance;
+
+                const angle = Math.atan2(e.y - p.y, e.x - p.x);
+                let nextE = { ...e, health: e.health - finalDmg, lastHitTime: Date.now(), hitAngle: angle };
+              
+                if (p.slowEffect) {
+                  nextE.slowDuration = 2.0; // 2 seconds of slow
+                  nextE.slowMultiplier = p.slowEffect;
+                }
+
+                if (p.burnDamage && p.burnDuration) {
+                  nextE.burnDuration = p.burnDuration;
+                  nextE.burnDamagePerSec = p.burnDamage;
+                }
+
+                return nextE;
+              };
+
+              if (p.splashRadius) {
+                currentEnemies = currentEnemies.map(e => {
+                  const d = Math.sqrt((e.x - hitX) ** 2 + (e.y - hitY) ** 2);
+                  if (d <= p.splashRadius!) {
+                    return processHit(e, p.damage);
+                  }
+                  return e;
+                });
+              } else if (collisionEnemy) {
+                currentEnemies = currentEnemies.map(e => (e.id === collisionEnemy!.id ? processHit(e, p.damage) : e));
+              } else if (targetsHit.length > 0) {
+                const hitIds = targetsHit.map(t => t.id);
+                currentEnemies = currentEnemies.map(e => (hitIds.includes(e.id) ? processHit(e, p.damage) : e));
+              }
+
+              if (!p.isPiercing || moveStep >= distToDest) {
+                 // Remove projectile
+              } else {
+                nextProjs.push({
+                  ...p,
+                  x: p.x + dx * (moveStep / distToDest),
+                  y: p.y + dy * (moveStep / distToDest),
+                  progress: p.progress + (moveStep / distToDest)
+                });
+              }
             } else {
+              const ratio = moveStep / distToDest;
               nextProjs.push({
                 ...p,
-                x: p.x + dx * (moveStep / distToDest),
-                y: p.y + dy * (moveStep / distToDest),
-                progress: p.progress + (moveStep / distToDest)
+                x: p.x + (p.targetX - p.x) * ratio,
+                y: p.y + (p.targetY - p.y) * ratio,
+                z: p.z + (p.targetZ - p.z) * ratio,
+                progress: p.progress + ratio
               });
             }
-          } else {
-            const ratio = moveStep / distToDest;
-            nextProjs.push({
-              ...p,
-              x: p.x + (p.targetX - p.x) * ratio,
-              y: p.y + (p.targetY - p.y) * ratio,
-              z: p.z + (p.targetZ - p.z) * ratio,
-              progress: p.progress + ratio
-            });
-          }
-        });
-        currentProjectiles = nextProjs;
+          });
+          currentProjectiles = nextProjs;
 
-        // 4. Cleanup & Rewards
-        currentEnemies = currentEnemies.filter(e => {
-          if (e.health <= 0) {
-            const type = ENEMY_TYPES[e.type];
-            const reward = Math.round(type.reward * (e.rewardMultiplier ?? 1));
-            moneyEarned += reward;
-            createExplosion(e.x, e.y, type.color, 12);
-            createFloatingText(e.x, e.y, `+$${reward}`, "#00f2ff");
-            return false;
-          }
-          return true;
-        });
+          // 4. Cleanup & Rewards
+          currentEnemies = currentEnemies.filter(e => {
+            if (e.health <= 0) {
+              const type = ENEMY_TYPES[e.type];
+              const reward = Math.round(type.reward * (e.rewardMultiplier ?? 1));
+              moneyEarned += reward;
+              createExplosion(e.x, e.y, type.color, 12);
+              createFloatingText(e.x, e.y, `+$${reward}`, "#00f2ff");
+              return false;
+            }
+            return true;
+          });
 
-        // 5. Tower Logic (Targeting & Firing)
-        currentTowers = currentTowers.map(tower => {
-          const stats = TOWER_STATS[tower.type];
-          const fireInterval = 1 / (stats.fireRate * (1 + (tower.level - 1) * 0.2));
-          let nextLastFired = tower.lastFired + dt;
+          // 5. Tower Logic (Targeting & Firing)
+          currentTowers = currentTowers.map(tower => {
+            const stats = TOWER_STATS[tower.type];
+            const fireInterval = 1 / (stats.fireRate * (1 + (tower.level - 1) * 0.2));
+            let nextLastFired = tower.lastFired + dt;
           
-          // Efficient Targeted Selection
-          const range = stats.range * (1 + (tower.level - 1) * 0.1);
-          const inRange = currentEnemies.filter(e => getDistance(tower, e) <= range);
-          const target = selectTarget(inRange, tower.targetingMode, tower);
+            // Efficient Targeted Selection
+            const range = stats.range * (1 + (tower.level - 1) * 0.1);
+            const inRange = currentEnemies.filter(e => getDistance(tower, e) <= range);
+            const target = selectTarget(inRange, tower.targetingMode, tower);
 
-          let currentAngle = tower.currentAngle || -Math.PI / 2;
-          if (target) {
-            const targetAngle = Math.atan2(target.y - tower.y, target.x - tower.x);
-            let angleDiff = targetAngle - currentAngle;
-            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-            currentAngle += angleDiff * dt * 14;
-          }
-
-          if (target && nextLastFired >= fireInterval) {
-            const enemyType = ENEMY_TYPES[target.type];
-            const dist = getDistance(tower, target);
-            const targetSpeedMult = target.speedMultiplier ?? 1;
-            const targetSlowMult = target.slowDuration > 0 ? target.slowMultiplier : 1;
-            const actualSpeed = enemyType.speed * targetSpeedMult * targetSlowMult;
-            // Iterative intercept: 3 passes converge for any enemy speed
-            let t = dist / stats.projectileSpeed;
-            let predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * t, pathLength));
-            for (let iter = 0; iter < 2; iter++) {
-              t = getDistance(tower, predPos) / stats.projectileSpeed;
-              predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * t, pathLength));
+            let currentAngle = tower.currentAngle || -Math.PI / 2;
+            if (target) {
+              const targetAngle = Math.atan2(target.y - tower.y, target.x - tower.x);
+              let angleDiff = targetAngle - currentAngle;
+              while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+              while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+              currentAngle += angleDiff * dt * 14;
             }
 
-            currentProjectiles.push({
-              id: `pr-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
-              x: tower.x + Math.cos(currentAngle) * 12,
-              y: tower.y + Math.sin(currentAngle) * 12,
-              z: 40 + tower.level * 2,
-              targetX: predPos.x,
-              targetY: predPos.y,
-              targetZ: 15,
-              damage: stats.damage * (1 + (tower.level - 1) * 0.45),
-              damageType: stats.damageType,
-              speed: stats.projectileSpeed,
-              type: tower.type,
-              splashRadius: stats.splashRadius,
-              isPiercing: stats.isPiercing,
-              slowEffect: stats.slowEffect,
-              burnDamage: stats.burnDamage,
-              burnDuration: stats.burnDuration,
-              progress: 0,
-              hitEnemyIds: [],
-            });
-            nextLastFired -= fireInterval; // Preserve overflow for accurate ROF
+            if (target && nextLastFired >= fireInterval) {
+              const enemyType = ENEMY_TYPES[target.type];
+              const dist = getDistance(tower, target);
+              const targetSpeedMult = target.speedMultiplier ?? 1;
+              const targetSlowMult = target.slowDuration > 0 ? target.slowMultiplier : 1;
+              const actualSpeed = enemyType.speed * targetSpeedMult * targetSlowMult;
+              // Iterative intercept: 3 passes converge for any enemy speed
+              let t = dist / stats.projectileSpeed;
+              let predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * t, pathLength));
+              for (let iter = 0; iter < 2; iter++) {
+                t = getDistance(tower, predPos) / stats.projectileSpeed;
+                predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * t, pathLength));
+              }
+
+              const startX = tower.x + Math.cos(currentAngle) * 12;
+              const startY = tower.y + Math.sin(currentAngle) * 12;
+              let destX = predPos.x;
+              let destY = predPos.y;
+              if (stats.isPiercing) {
+                // Piercing rounds keep flying through the aim point out to max range
+                const aimDist = Math.max(1, getDistance({ x: startX, y: startY }, predPos));
+                destX = startX + ((predPos.x - startX) / aimDist) * range;
+                destY = startY + ((predPos.y - startY) / aimDist) * range;
+              }
+
+              currentProjectiles.push({
+                id: `pr-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
+                x: startX,
+                y: startY,
+                z: 40 + tower.level * 2,
+                targetX: destX,
+                targetY: destY,
+                targetZ: 15,
+                damage: stats.damage * (1 + (tower.level - 1) * 0.45),
+                damageType: stats.damageType,
+                speed: stats.projectileSpeed,
+                type: tower.type,
+                splashRadius: stats.splashRadius,
+                isPiercing: stats.isPiercing,
+                slowEffect: stats.slowEffect,
+                burnDamage: stats.burnDamage,
+                burnDuration: stats.burnDuration,
+                progress: 0,
+                hitEnemyIds: [],
+              });
+              nextLastFired -= fireInterval; // Preserve overflow for accurate ROF
+            }
+            return { ...tower, lastFired: nextLastFired, targetId: target?.id || null, currentAngle };
+          });
+
+          // 6. Global Housekeeping
+          if (newShake > 0) newShake = Math.max(0, newShake - dt);
+        
+          // --- CRITICAL: IMMEDIATE REF SYNC ---
+          // This eliminates the 1-frame "React lag" that previously broke fire rates and collision logic.
+          enemiesRef.current = currentEnemies;
+          towersRef.current = currentTowers;
+          projectilesRef.current = currentProjectiles;
+
+          // Final Sync to local states
+          setEnemies(currentEnemies);
+          setTowers(currentTowers);
+          setProjectiles(currentProjectiles);
+        
+          if (moneyEarned !== 0 || livesLost !== 0 || newShake !== currentGameState.shakeTime) {
+            const nextLives = Math.max(0, currentGameState.lives - livesLost);
+            const nextMoney = currentGameState.money + moneyEarned;
+            const updatedGameState = {
+              ...currentGameState,
+              money: nextMoney,
+              lives: nextLives,
+              shakeTime: newShake,
+              isGameOver: nextLives <= 0
+            };
+            setGameState(updatedGameState);
+            gameStateRef.current = updatedGameState;
           }
-          return { ...tower, lastFired: nextLastFired, targetId: target?.id || null, currentAngle };
-        });
 
-        // 6. Global Housekeeping
-        if (newShake > 0) newShake = Math.max(0, newShake - dt);
+          if (currentEnemies.length === 0 && enemiesToSpawnRef.current === 0 && waveActiveRef.current) {
+            const waveBonus = 120 + (currentGameState.waveNumber - 1) * 25;
+            const updatedState = {
+              ...gameStateRef.current,
+              money: gameStateRef.current.money + waveBonus,
+              isWaveReady: true,
+              currentWaveModifier: WaveModifier.NONE,
+            };
+            waveActiveRef.current = false;
+            setWaveActive(false);
+            setGameState(updatedState);
+            gameStateRef.current = updatedState;
+            createFloatingText(PATH[PATH.length - 1].x, PATH[PATH.length - 1].y, `Wave Bonus: +$${waveBonus}`, "#10b981");
+          }
         
-        // --- CRITICAL: IMMEDIATE REF SYNC ---
-        // This eliminates the 1-frame "React lag" that previously broke fire rates and collision logic.
-        enemiesRef.current = currentEnemies;
-        towersRef.current = currentTowers;
-        projectilesRef.current = currentProjectiles;
+          // Ephemeral Update
+          setParticles(prev => prev.map(p => ({
+              ...p,
+              x: p.x + p.vx * dt,
+              y: p.y + (p.vy || 0) * dt,
+              z: (p.z || 10) + (Math.random() - 0.5) * 15 * dt,
+              life: p.life - dt * 2.2
+            })).filter(p => p.life > 0));
 
-        // Final Sync to local states
-        setEnemies(currentEnemies);
-        setTowers(currentTowers);
-        setProjectiles(currentProjectiles);
-        
-        if (moneyEarned !== 0 || livesLost !== 0 || newShake !== currentGameState.shakeTime) {
-          const nextLives = Math.max(0, currentGameState.lives - livesLost);
-          const nextMoney = currentGameState.money + moneyEarned;
-          const updatedGameState = {
-            ...currentGameState,
-            money: nextMoney,
-            lives: nextLives,
-            shakeTime: newShake,
-            isGameOver: nextLives <= 0
-          };
-          setGameState(updatedGameState);
-          gameStateRef.current = updatedGameState;
+          setFloatingTexts(prev => prev.map(t => ({
+              ...t,
+              y: t.y - dt * 50,
+              life: t.life - dt * 1.5
+            })).filter(t => t.life > 0));
         }
-
-        if (currentEnemies.length === 0 && enemiesToSpawnRef.current === 0 && waveActive) {
-          const waveBonus = 120 + (currentGameState.waveNumber - 1) * 25;
-          const updatedState = {
-            ...gameStateRef.current,
-            money: gameStateRef.current.money + waveBonus,
-            isWaveReady: true,
-            currentWaveModifier: WaveModifier.NONE,
-          };
-          setWaveActive(false);
-          setGameState(updatedState);
-          gameStateRef.current = updatedState;
-          createFloatingText(PATH[PATH.length - 1].x, PATH[PATH.length - 1].y, `Wave Bonus: +$${waveBonus}`, "#10b981");
-        }
-        
-        // Ephemeral Update
-        setParticles(prev => prev.map(p => ({
-            ...p,
-            x: p.x + p.vx * dt,
-            y: p.y + (p.vy || 0) * dt,
-            z: (p.z || 10) + (Math.random() - 0.5) * 15 * dt,
-            life: p.life - dt * 2.2
-          })).filter(p => p.life > 0));
-
-        setFloatingTexts(prev => prev.map(t => ({
-            ...t,
-            y: t.y - dt * 50,
-            life: t.life - dt * 1.5
-          })).filter(t => t.life > 0));
       }
     }
     lastTimeRef.current = time;
     requestRef.current = requestAnimationFrame(update);
-  }, [waveActive, pathLength, createExplosion, createFloatingText]); // Stable dependencies
+  }, [pathLength, createExplosion, createFloatingText]); // Stable dependencies
 
 
   useEffect(() => {
@@ -657,6 +681,7 @@ export function useGame() {
       relocatingTowerId: null,
       shakeTime: 0,
       currentWaveModifier: WaveModifier.NONE,
+      gameSpeed: gameStateRef.current.gameSpeed,
     });
     setTowers([]);
     setEnemies([]);
@@ -664,6 +689,7 @@ export function useGame() {
     setParticles([]);
     setFloatingTexts([]);
     setWaveActive(false);
+    waveActiveRef.current = false;
     enemiesToSpawnRef.current = 0;
   };
 

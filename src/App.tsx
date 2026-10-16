@@ -3,7 +3,7 @@ import { GameCanvas } from './components/GameCanvas';
 import { UIOverlay } from './components/UIOverlay';
 import { useGame } from './hooks/useGame';
 import { TowerType } from './types';
-import { TOWER_STATS } from './constants';
+import { TOWER_STATS, GAME_SPEEDS } from './constants';
 import { toIso } from './lib/iso';
 
 // Helper for 2.5D hit detection: distance from point to vertical segment
@@ -100,6 +100,10 @@ export default function App() {
         onStartWave={startWave}
         onPauseToggle={() => setGameState(s => ({ ...s, isPaused: !s.isPaused }))}
         onRestart={restart}
+        onCycleSpeed={() => setGameState(s => ({
+          ...s,
+          gameSpeed: GAME_SPEEDS[(GAME_SPEEDS.indexOf(s.gameSpeed) + 1) % GAME_SPEEDS.length],
+        }))}
         onPlaceTower={placeTower}
         onUpgradeTower={upgradeTower}
         onSpecializeTower={specializeTower}

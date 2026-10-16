@@ -65,6 +65,7 @@ export interface TowerInstance {
   currentAngle?: number;
   baseType: TowerType;
   targetingMode: TargetingMode;
+  invested: number; // Total money spent on this tower (build + upgrades + specialization)
 }
 
 export interface EnemyType {
@@ -157,4 +158,5 @@ export interface GameState {
   relocatingTowerId: string | null;
   shakeTime: number;
   currentWaveModifier: WaveModifier;
+  gameSpeed: number; // Simulation steps per frame (1x / 2x / 3x)
 }

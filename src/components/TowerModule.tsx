@@ -13,7 +13,7 @@ import {
   X
 } from 'lucide-react';
 import { TowerInstance, GameState, TowerType, TargetingMode, DamageType } from '../types';
-import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
+import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT, getSellValue } from '../constants';
 import { toIso } from '../lib/iso';
 
 interface TowerModuleProps {
@@ -78,7 +78,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
     [TowerType.SPLASH]: [TowerType.MORTAR_CRYO, TowerType.MORTAR_BOMBER],
   };
 
-  const sellValue = Math.floor(stats.cost * 0.5 + (tower.level - 1) * stats.cost * 0.3);
+  const sellValue = getSellValue(tower);
   const canAffordUpgrade = gameState.money >= upgradeCost;
   const canAffordRelocation = gameState.money >= RELOCATION_FEE;
   

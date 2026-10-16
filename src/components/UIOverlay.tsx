@@ -29,6 +29,7 @@ interface UIOverlayProps {
   onStartWave: () => void;
   onPauseToggle: () => void;
   onRestart: () => void;
+  onCycleSpeed: () => void;
   onPlaceTower: (type: TowerType) => void;
   onUpgradeTower: (id: string) => void;
   onSpecializeTower: (id: string, type: TowerType) => void;
@@ -79,6 +80,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onStartWave,
   onPauseToggle,
   onRestart,
+  onCycleSpeed,
   onUpgradeTower,
   onSpecializeTower,
   onSellTower,
@@ -345,6 +347,19 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               ? <Play  className="w-4 h-4 text-white/55 group-hover:text-white transition-colors" />
               : <Pause className="w-4 h-4 text-white/55 group-hover:text-white transition-colors" />
             }
+          </button>
+
+          {/* Game speed */}
+          <button
+            onClick={onCycleSpeed}
+            title="Game speed"
+            className={`w-9 h-9 rounded-xl flex items-center justify-center border font-black font-mono text-[11px] transition-all ${
+              gameState.gameSpeed > 1
+                ? 'border-accent-amber/40 bg-accent-amber/10 text-accent-amber'
+                : 'border-white/[0.08] bg-white/[0.04] text-white/55 hover:bg-white/[0.09] hover:border-white/[0.18] hover:text-white'
+            }`}
+          >
+            {gameState.gameSpeed}×
           </button>
 
           {/* Restart */}
