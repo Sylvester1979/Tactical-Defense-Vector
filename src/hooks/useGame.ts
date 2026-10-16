@@ -21,7 +21,11 @@ import {
   ENEMY_TYPES, 
   WAVES,
   RELOCATION_FEE,
-  getSellValue
+  getSellValue,
+  getWaveConfig,
+  getEnemyHealth,
+  getWaveBonus,
+  WaveConfig
 } from '../constants';
 
 export function useGame() {
@@ -62,7 +66,7 @@ export function useGame() {
   const lastTimeRef = useRef<number>(0);
   const spawnTimerRef = useRef<number>(0);
   const enemiesToSpawnRef = useRef<number>(0);
-  const currentWaveRef = useRef<any>(null);
+  const currentWaveRef = useRef<WaveConfig | null>(null);
   // Mirrors waveActive synchronously so multiple sim steps per frame can't double-award the wave bonus
   const waveActiveRef = useRef(false);
 
@@ -157,35 +161,15 @@ export function useGame() {
   const startWave = useCallback(() => {
     if (waveActive || gameState.isGameOver) return;
     
-    // Increment wave number and reset ready state
     const waveNumber = (gameState.waveNumber || 0) + 1;
-    let wave;
-    
-    if (waveNumber <= WAVES.length) {
-      wave = WAVES[waveNumber - 1];
-    } else {
-      // Procedural scaling wave
-      const baseWave = WAVES[(waveNumber - 1) % WAVES.length];
-      const difficultyScale = Math.floor(waveNumber / WAVES.length);
-      wave = {
-        count: Math.floor(baseWave.count * (1 + difficultyScale * 0.8)),
-        interval: baseWave.interval * Math.pow(0.85, difficultyScale),
-        enemyTypes: baseWave.enemyTypes,
-        modifier: baseWave.modifier,
-      };
-    }
+    const wave = getWaveConfig(waveNumber);
 
-    const modifier = wave.modifier ?? WaveModifier.NONE;
-    let effectiveCount = wave.count;
-    if (modifier === WaveModifier.SWARM) effectiveCount = wave.count * 2;
-    if (modifier === WaveModifier.ELITE) effectiveCount = Math.ceil(wave.count * 0.5);
-
-    enemiesToSpawnRef.current = effectiveCount;
-    currentWaveRef.current = { ...wave, modifier };
+    enemiesToSpawnRef.current = wave.count;
+    currentWaveRef.current = wave;
     spawnTimerRef.current = 0;
     waveActiveRef.current = true;
     setWaveActive(true);
-    setGameState(prev => ({ ...prev, isPaused: false, isWaveReady: false, waveNumber, currentWaveModifier: modifier }));
+    setGameState(prev => ({ ...prev, isPaused: false, isWaveReady: false, waveNumber, currentWaveModifier: wave.modifier }));
   }, [waveActive, gameState.waveNumber, gameState.isGameOver]);
 
   const placeTower = useCallback((type: TowerType, x: number, y: number) => {
@@ -227,10 +211,9 @@ export function useGame() {
     const tower = towers.find(t => t.id === id);
     if (!tower) return;
     
-    // Check if tower is at cap (level 3 for base towers)
-    if (tower.level >= 3 && (tower.type === TowerType.BASIC || tower.type === TowerType.SNIPER || tower.type === TowerType.SPLASH)) {
-      return; // UI should handle specialization selection
-    }
+    // Cap: level 3 for base towers (then specialize), level 5 for specializations
+    const isBaseType = tower.type === TowerType.BASIC || tower.type === TowerType.SNIPER || tower.type === TowerType.SPLASH;
+    if (tower.level >= (isBaseType ? 3 : 5)) return;
 
     const stats = TOWER_STATS[tower.type];
     const upgradeCost = Math.floor(stats.cost * 0.7 * tower.level);
@@ -349,15 +332,7 @@ export function useGame() {
               enemiesToSpawnRef.current--;
             
               const randomType = wave.enemyTypes[Math.floor(Math.random() * wave.enemyTypes.length)];
-              const enemyType = ENEMY_TYPES[randomType];
-              const waveNumber = currentGameState.waveNumber || 1;
-              // Slightly softer health scaling for early game
-              const scalingFactor = Math.max(0, waveNumber - 2) * 0.10;
-              const mod = (currentWaveRef.current?.modifier ?? WaveModifier.NONE) as WaveModifier;
-              const healthMult  = mod === WaveModifier.SWARM ? 0.5 : mod === WaveModifier.ELITE ? 2.0 : 1.0;
-              const speedMult   = mod === WaveModifier.RUSH  ? 1.6 : 1.0;
-              const rewardMult  = mod === WaveModifier.ELITE ? 1.5 : 1.0;
-              const baseHealth  = enemyType.health * (1 + scalingFactor) * healthMult;
+              const baseHealth = getEnemyHealth(randomType, currentGameState.waveNumber || 1, wave.healthMult);
               currentEnemies.push({
                 id: `e-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
                 type: randomType,
@@ -373,8 +348,8 @@ export function useGame() {
                 slowMultiplier: 1,
                 burnDuration: 0,
                 burnDamagePerSec: 0,
-                speedMultiplier: speedMult,
-                rewardMultiplier: rewardMult,
+                speedMultiplier: wave.speedMult,
+                rewardMultiplier: wave.rewardMult,
               });
             }
           }
@@ -624,7 +599,7 @@ export function useGame() {
           }
 
           if (currentEnemies.length === 0 && enemiesToSpawnRef.current === 0 && waveActiveRef.current) {
-            const waveBonus = 120 + (currentGameState.waveNumber - 1) * 25;
+            const waveBonus = getWaveBonus(currentGameState.waveNumber);
             const updatedState = {
               ...gameStateRef.current,
               money: gameStateRef.current.money + waveBonus,

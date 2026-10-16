@@ -197,6 +197,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                     <button
                       key={mode}
                       onClick={() => onSetTargetingMode(tower.id, mode)}
+                      title="Cycle priority (T)"
                       className={`flex-1 py-1 rounded text-[8px] font-mono uppercase transition-all ${
                         tower.targetingMode === mode
                           ? 'bg-accent-cyan text-dark-bg font-black'
@@ -266,6 +267,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                   <div className="flex gap-2">
                     <button
                       onClick={() => onUpgrade(tower.id)}
+                      title="Overclock (U)"
                       disabled={!canAffordUpgrade || (tower.level >= 5 && isSpecialized)}
                       className={`flex-[2] py-2 px-3 flex items-center justify-between rounded-lg transition-all group ${
                         canAffordUpgrade && !(tower.level >= 5 && isSpecialized)
@@ -288,13 +290,14 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                         ? 'bg-white/5 hover:bg-accent-amber/20 border-white/5 hover:border-accent-amber/40 text-white/40 hover:text-accent-amber'
                         : 'bg-white/5 border-white/5 text-white/10 cursor-not-allowed'
                       }`}
-                      title={`Relocate ($${RELOCATION_FEE})`}
+                      title={`Relocate ($${RELOCATION_FEE}) (R)`}
                     >
                       <MoveVertical className="w-3 h-3" />
                     </button>
 
                     <button
                       onClick={() => onSell(tower.id)}
+                      title={`Sell (+$${sellValue}) (S)`}
                       className="flex-1 py-2 px-3 flex items-center justify-center rounded-lg bg-white/5 hover:bg-accent-red/20 border border-white/5 hover:border-accent-red/40 text-white/40 hover:text-accent-red transition-all active:scale-95 group"
                     >
                       <Unplug className="w-3 h-3 group-hover:animate-pulse" />

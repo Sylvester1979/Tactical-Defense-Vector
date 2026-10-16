@@ -211,3 +211,48 @@ export const WAVES = [
   { count: 2,  interval: 2.0, enemyTypes: ['COLOSSUS'], modifier: WaveModifier.ELITE },
   { count: 150, interval: 0.05, enemyTypes: ['INTERCEPTOR', 'PHANTOM'], modifier: WaveModifier.RUSH },
 ];
+
+export interface WaveConfig {
+  count: number;          // Enemies actually spawned (modifier already applied)
+  interval: number;
+  enemyTypes: string[];
+  modifier: WaveModifier;
+  healthMult: number;
+  speedMult: number;
+  rewardMult: number;
+}
+
+// Single source of truth for a wave's composition — used by the engine and the preview UI
+export const getWaveConfig = (waveNumber: number): WaveConfig => {
+  let wave = WAVES[waveNumber - 1];
+  if (!wave) {
+    // Procedural scaling past the scripted waves
+    const baseWave = WAVES[(waveNumber - 1) % WAVES.length];
+    const difficultyScale = Math.floor(waveNumber / WAVES.length);
+    wave = {
+      count: Math.floor(baseWave.count * (1 + difficultyScale * 0.8)),
+      interval: baseWave.interval * Math.pow(0.85, difficultyScale),
+      enemyTypes: baseWave.enemyTypes,
+      modifier: baseWave.modifier,
+    };
+  }
+  const modifier = wave.modifier ?? WaveModifier.NONE;
+  let count = wave.count;
+  if (modifier === WaveModifier.SWARM) count = wave.count * 2;
+  if (modifier === WaveModifier.ELITE) count = Math.ceil(wave.count * 0.5);
+  return {
+    count,
+    interval: wave.interval,
+    enemyTypes: wave.enemyTypes,
+    modifier,
+    healthMult: modifier === WaveModifier.SWARM ? 0.5 : modifier === WaveModifier.ELITE ? 2.0 : 1.0,
+    speedMult: modifier === WaveModifier.RUSH ? 1.6 : 1.0,
+    rewardMult: modifier === WaveModifier.ELITE ? 1.5 : 1.0,
+  };
+};
+
+// Slightly softer health scaling for early game
+export const getEnemyHealth = (type: string, waveNumber: number, healthMult: number) =>
+  ENEMY_TYPES[type].health * (1 + Math.max(0, waveNumber - 2) * 0.10) * healthMult;
+
+export const getWaveBonus = (waveNumber: number) => 120 + (waveNumber - 1) * 25;
