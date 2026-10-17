@@ -657,6 +657,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                     const e = ENEMY_TYPES[key];
                     const hp = Math.round(getEnemyHealth(key, nextWave, cfg.healthMult));
                     const res = Object.entries(e.resistances ?? {}) as [DamageType, number][];
+                    const leak = e.leakDamage ?? 1;
                     return (
                       <div key={key} className="rounded-lg bg-black/30 border border-white/[0.05] px-3 py-2">
                         <div className="flex items-center gap-2">
@@ -664,7 +665,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                           <span className="text-[10px] font-bold text-white/85 truncate">{e.name}</span>
                           <span className="ml-auto text-[9px] font-mono text-white/45 tabular-nums">{hp} HP · {Math.round(e.speed * cfg.speedMult)} SPD</span>
                         </div>
-                        {res.length > 0 && (
+                        {(res.length > 0 || leak > 1) && (
                           <div className="flex flex-wrap gap-1 mt-1.5">
                             {res.map(([dt, mult]) => (
                               <span
@@ -676,6 +677,11 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                                 {mult > 1 ? 'Weak' : 'Resists'} {dt} ×{mult}
                               </span>
                             ))}
+                            {leak > 1 && (
+                              <span className="text-[7px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border bg-amber-500/10 border-amber-500/25 text-amber-300">
+                                Leak −{leak} lives
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

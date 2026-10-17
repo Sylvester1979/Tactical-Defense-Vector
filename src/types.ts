@@ -76,6 +76,7 @@ export interface EnemyType {
   size: number;
   name: string;
   resistances?: Partial<Record<DamageType, number>>; // 0 to 1, multiplier (0.5 = 50% damage)
+  leakDamage?: number; // Lives lost if it reaches the core (default 1)
 }
 
 export interface EnemyInstance {

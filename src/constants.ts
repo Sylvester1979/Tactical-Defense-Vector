@@ -168,6 +168,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     color: '#94a3b8',
     size: 30,
     resistances: { [DamageType.EXPLOSIVE]: 0.6, [DamageType.KINETIC]: 0.8 }, // Tanky
+    leakDamage: 2,
   },
   PHANTOM: {
     name: 'Ghost Stalker',
@@ -176,7 +177,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     reward: 20,
     color: '#c084fc',
     size: 18,
-    resistances: { [DamageType.FROST]: 1.5 }, // Weak to frost slowing
+    resistances: { [DamageType.FROST]: 1.5 }, // Takes 1.5x frost damage
   },
   COLOSSUS: {
     name: 'Dreadnought',
@@ -186,6 +187,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     color: '#ef4444',
     size: 50,
     resistances: { [DamageType.FIRE]: 1.3, [DamageType.ENERGY]: 1.2 }, // Weak to fire/energy
+    leakDamage: 5,
   },
 };
 

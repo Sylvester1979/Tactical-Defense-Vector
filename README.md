@@ -1,20 +1,47 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Tactical Defense: Vector
 
-# Run and deploy your AI Studio app
+An isometric tower defense game built with React and Canvas 2D. Hold the core
+against 20 scripted waves (and endless procedural ones after that) using three
+tower lines, each with two specializations.
 
-This contains everything you need to run your app locally.
+## Run locally
 
-View your app in AI Studio: https://ai.studio/apps/300807c9-1dfa-4f70-8274-c8bfea80e22a
+**Prerequisites:** Node.js
 
-## Run Locally
+```bash
+npm install
+npm run dev      # http://localhost:3000
+npm run build    # production build into dist/
+npm run lint     # type-check
+```
 
-**Prerequisites:**  Node.js
+## How to play
 
+- **Towers**: Rapid Vulcan (kinetic), Railgun (energy), Nova Mortar (explosive splash).
+  Overclock a tower up to MK.3, then specialize it into one of two variants (up to MK.5).
+- **Damage types matter**: enemies resist or are weak to specific damage types.
+  The *Incoming* panel shows the next wave's enemies, their HP, resistances, and how
+  many lives each one costs if it reaches the core.
+- **Wave modifiers**: RUSH (faster), SWARM (more, weaker), ELITE (fewer, tougher, richer).
+- Selling refunds 60% of everything invested in a tower; relocating costs a flat fee.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Controls
+
+| Key | Action |
+| --- | --- |
+| `1` `2` `3` | Pick Vulcan / Railgun / Mortar for placement |
+| `Space` | Start next wave |
+| `P` | Pause / resume |
+| `F` | Game speed 1× / 2× / 3× |
+| `U` | Overclock selected tower |
+| `S` `S` | Sell selected tower (press twice) |
+| `R` | Relocate selected tower |
+| `T` | Cycle targeting priority |
+| `Esc` | Cancel / deselect |
+
+## Project layout
+
+- `src/hooks/useGame.ts` — simulation loop (spawning, movement, projectiles, economy)
+- `src/constants.ts` — tower/enemy stats, wave table and shared balance helpers
+- `src/components/GameCanvas.tsx` — isometric renderer
+- `src/components/UIOverlay.tsx`, `TowerModule.tsx` — HUD, sidebar and tower panel
