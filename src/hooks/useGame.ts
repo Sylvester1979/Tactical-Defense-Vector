@@ -31,6 +31,17 @@ import {
 } from '../constants';
 import { loadRun, saveRun, clearRun, loadBest, saveBest, hydrateTowers } from '../lib/storage';
 import { checkPlacement } from '../lib/placement';
+import { playSound, SoundName } from '../lib/audio';
+
+// Stereo position of a world point: left/right across the isometric screen
+const panAt = (x: number, y: number) => Math.max(-1, Math.min(1, ((x - y) * 0.6) / 500)) * 0.7;
+
+// Firing sound per tower type
+const FIRE_SOUND: Record<TowerType, SoundName> = {
+  [TowerType.BASIC]: 'vulcan', [TowerType.VULCAN_STING]: 'vulcan', [TowerType.VULCAN_TITAN]: 'vulcanHeavy',
+  [TowerType.SNIPER]: 'railgun', [TowerType.RAILGUN_PIERCER]: 'railgun', [TowerType.RAILGUN_HYPER]: 'railgunHyper',
+  [TowerType.SPLASH]: 'mortar', [TowerType.MORTAR_BOMBER]: 'mortar', [TowerType.MORTAR_CRYO]: 'cryoLaunch',
+};
 
 // Mortar shell apex: proportional to throw distance, clamped
 const MORTAR_ARC_PER_DIST = 0.45;
@@ -191,16 +202,19 @@ export function useGame() {
     spawnTimerRef.current = 0;
     waveActiveRef.current = true;
     setWaveActive(true);
+    playSound('waveStart');
+    if (wave.enemyTypes.includes('COLOSSUS')) window.setTimeout(() => playSound('bossWarn'), 650);
     setGameState(prev => ({ ...prev, isPaused: false, isWaveReady: false, waveNumber, currentWaveModifier: wave.modifier }));
   }, [waveActive, gameState.waveNumber, gameState.isGameOver]);
 
   const placeTower = useCallback((type: TowerType, x: number, y: number) => {
     const stats = TOWER_STATS[type];
-    if (gameState.money < stats.cost) return;
+    if (gameState.money < stats.cost) { playSound('error'); return; }
 
     const check = checkPlacement({ x, y }, towers);
     if (check !== 'OK') {
       createFloatingText(x, y, check === 'PATH' ? "INVALID TERRAIN" : "SPACE OCCUPIED", "#ff4d4d");
+      playSound('error');
       return;
     }
 
@@ -219,6 +233,7 @@ export function useGame() {
     };
 
     setTowers(prev => [...prev, newTower]);
+    playSound('place', panAt(x, y));
     setGameState(prev => ({ ...prev, money: prev.money - stats.cost }));
   }, [gameState.money, towers, createFloatingText]);
 
@@ -237,6 +252,9 @@ export function useGame() {
       setTowers(prev => prev.map(t => t.id === id ? { ...t, level: t.level + 1, invested: t.invested + upgradeCost } : t));
       setGameState(prev => ({ ...prev, money: prev.money - upgradeCost }));
       createFloatingText(tower.x, tower.y - 20, "UPGRADED!", "#00f2ff");
+      playSound('upgrade', panAt(tower.x, tower.y));
+    } else {
+      playSound('error');
     }
   }, [towers, gameState.money, createFloatingText]);
 
@@ -251,6 +269,7 @@ export function useGame() {
       setTowers(prev => prev.map(t => t.id === id ? { ...t, type: newType, level: 1, invested: t.invested + cost } : t));
       setGameState(prev => ({ ...prev, money: prev.money - cost }));
       createExplosion(tower.x, tower.y, stats.color, 20);
+      playSound('specialize', panAt(tower.x, tower.y));
       createFloatingText(tower.x, tower.y - 20, stats.name.toUpperCase(), stats.color);
     }
   }, [towers, gameState.money, createFloatingText, createExplosion]);
@@ -264,6 +283,7 @@ export function useGame() {
     setTowers(prev => prev.filter(t => t.id !== id));
     setGameState(prev => ({ ...prev, money: prev.money + sellValue, selectedTowerId: null, relocatingTowerId: null }));
     createFloatingText(tower.x, tower.y, `+$${sellValue}`, "#ffb800");
+    playSound('sell', panAt(tower.x, tower.y));
   }, [towers, createFloatingText]);
 
   const startRelocation = useCallback((id: string) => {
@@ -285,6 +305,7 @@ export function useGame() {
     const check = checkPlacement({ x, y }, towers, id);
     if (check !== 'OK') {
       createFloatingText(x, y, check === 'PATH' ? "INVALID TERRAIN" : "SPACE OCCUPIED", "#ff4d4d");
+      playSound('error');
       return;
     }
 
@@ -296,6 +317,7 @@ export function useGame() {
       selectedTowerId: id 
     }));
     createExplosion(x, y, "#00f2ff", 15);
+    playSound('place', panAt(x, y));
     createFloatingText(x, y - 20, "REDEPLOYED", "#00f2ff");
   }, [towers, createFloatingText, createExplosion]);
 
@@ -408,6 +430,7 @@ export function useGame() {
           if (livesLost > 0) {
             const core = PATH[PATH.length - 1];
             createFloatingText(core.x, core.y, `−${livesLost}`, '#ff4d4d');
+            playSound('leak', panAt(core.x, core.y));
           }
 
           // 3. Projectiles (Collision & Movement)
@@ -443,9 +466,10 @@ export function useGame() {
               const hitX = collisionEnemy ? collisionEnemy.x : (targetsHit.length > 0 ? targetsHit[0].x : p.targetX);
               const hitY = collisionEnemy ? collisionEnemy.y : (targetsHit.length > 0 ? targetsHit[0].y : p.targetY);
             
-              if (collisionEnemy || targetsHit.length > 0) {
+              if (collisionEnemy || targetsHit.length > 0 || p.splashRadius) {
                 createExplosion(hitX, hitY, TOWER_STATS[p.type].color, p.splashRadius ? 15 : 6);
               }
+              if (p.splashRadius) playSound(p.slowEffect ? 'freeze' : 'explosion', panAt(hitX, hitY));
             
               const processHit = (e: EnemyInstance, dmg: number) => {
                 const enemyType = ENEMY_TYPES[e.type];
@@ -518,6 +542,7 @@ export function useGame() {
               const reward = Math.round(type.reward * (e.rewardMultiplier ?? 1));
               moneyEarned += reward;
               createExplosion(e.x, e.y, type.color, 12);
+              playSound(e.type === 'COLOSSUS' ? 'deathBoss' : 'death', panAt(e.x, e.y));
               createFloatingText(e.x, e.y, `+$${reward}`, "#00f2ff");
               return false;
             }
@@ -598,6 +623,7 @@ export function useGame() {
                 hitEnemyIds: [],
               });
               nextLastFired -= fireInterval; // Preserve overflow for accurate ROF
+              playSound(FIRE_SOUND[tower.type], panAt(tower.x, tower.y));
             }
             // Idle time doesn't bank shots: a tower without a target just stays ready for one.
             // (Overflow below one interval is kept, so the rate of fire stays exact while firing.)
@@ -646,6 +672,7 @@ export function useGame() {
             setGameState(updatedState);
             gameStateRef.current = updatedState;
             createFloatingText(PATH[PATH.length - 1].x, PATH[PATH.length - 1].y, `Wave Bonus: +$${waveBonus}`, "#10b981");
+            playSound('waveClear');
           }
         
           // Ephemeral Update
@@ -698,7 +725,10 @@ export function useGame() {
 
   // A lost run can't be resumed
   useEffect(() => {
-    if (gameState.isGameOver) clearRun();
+    if (gameState.isGameOver) {
+      clearRun();
+      playSound('gameOver');
+    }
   }, [gameState.isGameOver]);
 
   useEffect(() => {
