@@ -517,18 +517,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     : 'OK';
 
   // Hoisted drawing helpers
-  const drawIsoPoly = (ctx: CanvasRenderingContext2D, points: {x: number, y: number}[], fillStyle?: string, strokeStyle?: string, lineWidth: number = 1) => {
-    ctx.beginPath();
-    const first = toIso(points[0].x, points[0].y);
-    ctx.moveTo(first.x, first.y);
-    for (let i = 1; i < points.length; i++) {
-      const p = toIso(points[i].x, points[i].y);
-      ctx.lineTo(p.x, p.y);
-    }
-    ctx.closePath();
-    if (fillStyle) { ctx.fillStyle = fillStyle; ctx.fill(); }
-    if (strokeStyle) { ctx.strokeStyle = strokeStyle; ctx.lineWidth = lineWidth; ctx.stroke(); }
-  };
 
 
   const drawPrism = (ctx: CanvasRenderingContext2D, x: number, y: number, z: number, r: number, h: number, sides: number, color: string, topColor: string, alpha: number = 1.0, edgeColor?: string) => {
@@ -831,12 +819,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.drawImage(roadCacheRef.current, 0, 0);
 
     // --- 2. SHADOWS (On top of road) ---
-    const drawShadow = (x: number, y: number, radius: number, isEnemy: boolean = false) => {
+    const drawShadow = (x: number, y: number, radius: number) => {
       // Check if entity is on path to adjust shadow height
       // (Simplified: we use roadHeight for all if they are roughly on path, 
       // or we can detect intersection. For now, we'll draw shadows at both 0 and roadHeight with alpha)
       const pTop = toIso(x, y, roadHeight + 0.5);
-      const pBot = toIso(x, y, 0.5);
       
       ctx.save();
       ctx.scale(1, 0.5);

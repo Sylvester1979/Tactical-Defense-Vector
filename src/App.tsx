@@ -203,7 +203,6 @@ export default function App() {
         bestWaves={bestWaves}
         newRecord={newRecord}
         restoredFromSave={restoredFromSave}
-        onPlaceTower={placeTower}
         onUpgradeTower={upgradeTower}
         onSpecializeTower={specializeTower}
         onSellTower={sellTower}

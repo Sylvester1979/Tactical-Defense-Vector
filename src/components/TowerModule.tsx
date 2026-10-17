@@ -1,10 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  ArrowUp,
-  Trash2,
   Zap,
-  Shield,
   Target,
   Activity,
   Cpu,
@@ -85,7 +82,6 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   // Next-level preview using the same coefficients as the game engine
   const nextDamage = stats.damage * (1 + tower.level * 0.45);
   const nextRange = stats.range * (1 + tower.level * 0.1);
-  const nextFireRate = stats.fireRate * (1 + tower.level * 0.2);
 
   return (
     <div

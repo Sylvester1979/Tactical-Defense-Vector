@@ -4,7 +4,4 @@ import {defineConfig} from 'vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  define: {
-    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-  },
 });
