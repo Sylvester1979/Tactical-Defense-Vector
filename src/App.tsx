@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { GameCanvas } from './components/GameCanvas';
 import { UIOverlay } from './components/UIOverlay';
 import { useGame } from './hooks/useGame';
-import { TowerType } from './types';
-import { TOWER_STATS } from './constants';
+import { TowerType, TargetingMode } from './types';
+import { TOWER_STATS, GAME_SPEEDS } from './constants';
 import { toIso } from './lib/iso';
 
 // Helper for 2.5D hit detection: distance from point to vertical segment
@@ -38,18 +38,81 @@ export default function App() {
 
   const [placingType, setPlacingType] = useState<TowerType | null>(null);
 
-  // Keyboard support for UX consistency
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setPlacingType(null);
+  const cycleSpeed = React.useCallback(() => setGameState(s => ({
+    ...s,
+    gameSpeed: GAME_SPEEDS[(GAME_SPEEDS.indexOf(s.gameSpeed) + 1) % GAME_SPEEDS.length],
+  })), [setGameState]);
+
+  // Keyboard shortcuts. The handler is refreshed every render so it always sees
+  // current state, while the window listener itself is registered only once.
+  const keyHandlerRef = React.useRef<(e: KeyboardEvent) => void>(() => {});
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+
+    const selected = towers.find(t => t.id === gameState.selectedTowerId);
+    const key = e.key.toLowerCase();
+
+    if (key === 'escape') {
+      setPlacingType(null);
+      cancelRelocation();
+      setGameState(s => ({ ...s, selectedTowerId: null }));
+      return;
+    }
+    if (e.repeat) return;
+
+    const baseTypes = [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH];
+    const slot = ['1', '2', '3'].indexOf(key);
+    if (slot !== -1) {
+      const type = baseTypes[slot];
+      if (placingType === type) setPlacingType(null);
+      else if (gameState.money >= TOWER_STATS[type].cost) {
+        setPlacingType(type);
         cancelRelocation();
         setGameState(s => ({ ...s, selectedTowerId: null }));
       }
-    };
+      return;
+    }
+
+    switch (key) {
+      case ' ':
+        e.preventDefault();
+        // Don't let a focused button also receive the Space activation
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        if (gameState.isWaveReady && !gameState.isGameOver) startWave();
+        return;
+      case 'p':
+        setGameState(s => ({ ...s, isPaused: !s.isPaused }));
+        return;
+      case 'f':
+        cycleSpeed();
+        return;
+    }
+
+    if (!selected) return;
+    switch (key) {
+      case 'u':
+        upgradeTower(selected.id);
+        return;
+      case 's':
+        sellTower(selected.id);
+        return;
+      case 'r':
+        startRelocation(selected.id);
+        return;
+      case 't': {
+        const modes = Object.values(TargetingMode) as TargetingMode[];
+        setTowerTargetingMode(selected.id, modes[(modes.indexOf(selected.targetingMode) + 1) % modes.length]);
+        return;
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => keyHandlerRef.current(e);
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cancelRelocation, setGameState]);
+  }, []);
 
   const handleCanvasClick = (x: number, y: number, sx: number, sy: number) => {
     // 0. If relocating an existing tower
@@ -100,6 +163,7 @@ export default function App() {
         onStartWave={startWave}
         onPauseToggle={() => setGameState(s => ({ ...s, isPaused: !s.isPaused }))}
         onRestart={restart}
+        onCycleSpeed={cycleSpeed}
         onPlaceTower={placeTower}
         onUpgradeTower={upgradeTower}
         onSpecializeTower={specializeTower}

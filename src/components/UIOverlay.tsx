@@ -17,11 +17,12 @@ import {
   MoveVertical,
   Crosshair,
   Bomb,
-  Lock
+  Lock,
+  Radar
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
 import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode, DamageType } from '../types';
-import { TOWER_STATS, INITIAL_LIVES, WAVES, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
+import { TOWER_STATS, INITIAL_LIVES, WAVES, CANVAS_WIDTH, CANVAS_HEIGHT, ENEMY_TYPES, getWaveConfig, getEnemyHealth, getWaveBonus } from '../constants';
 
 interface UIOverlayProps {
   gameState: GameState;
@@ -29,6 +30,7 @@ interface UIOverlayProps {
   onStartWave: () => void;
   onPauseToggle: () => void;
   onRestart: () => void;
+  onCycleSpeed: () => void;
   onPlaceTower: (type: TowerType) => void;
   onUpgradeTower: (id: string) => void;
   onSpecializeTower: (id: string, type: TowerType) => void;
@@ -79,6 +81,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onStartWave,
   onPauseToggle,
   onRestart,
+  onCycleSpeed,
   onUpgradeTower,
   onSpecializeTower,
   onSellTower,
@@ -338,13 +341,26 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           {/* Pause / Resume */}
           <button
             onClick={onPauseToggle}
-            title={gameState.isPaused ? 'Resume' : 'Pause'}
+            title={gameState.isPaused ? 'Resume (P)' : 'Pause (P)'}
             className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.09] hover:border-white/[0.18] transition-all group"
           >
             {gameState.isPaused
               ? <Play  className="w-4 h-4 text-white/55 group-hover:text-white transition-colors" />
               : <Pause className="w-4 h-4 text-white/55 group-hover:text-white transition-colors" />
             }
+          </button>
+
+          {/* Game speed */}
+          <button
+            onClick={onCycleSpeed}
+            title="Game speed (F)"
+            className={`w-9 h-9 rounded-xl flex items-center justify-center border font-black font-mono text-[11px] transition-all ${
+              gameState.gameSpeed > 1
+                ? 'border-accent-amber/40 bg-accent-amber/10 text-accent-amber'
+                : 'border-white/[0.08] bg-white/[0.04] text-white/55 hover:bg-white/[0.09] hover:border-white/[0.18] hover:text-white'
+            }`}
+          >
+            {gameState.gameSpeed}×
           </button>
 
           {/* Restart */}
@@ -359,6 +375,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           {/* Deploy CTA */}
           <button
             onClick={onStartWave}
+            title="Start wave (Space)"
             disabled={gameState.isGameOver || !gameState.isWaveReady}
             className="relative h-9 pl-4 pr-5 rounded-xl font-black text-[11px] uppercase tracking-[0.14em] font-mono flex items-center gap-2 overflow-hidden transition-all disabled:opacity-35 disabled:cursor-not-allowed"
             style={gameState.isWaveReady && !gameState.isGameOver ? {
@@ -479,7 +496,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               right={<span className="text-[9px] font-mono text-white/30 tracking-wider">{BASE_TOWER_TYPES.length} UNITS</span>}
             />
             <div className="p-3 space-y-2.5">
-              {BASE_TOWER_TYPES.map(type => {
+              {BASE_TOWER_TYPES.map((type, idx) => {
                 const stats = TOWER_STATS[type];
                 const isAffordable = gameState.money >= stats.cost;
                 const isSelected = placingType === type;
@@ -530,6 +547,9 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                           boxShadow: `inset 0 0 12px ${stats.color}1f`,
                         }}
                       >
+                        <kbd className="absolute -bottom-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded bg-[#0d1117] border border-white/15 text-[8px] font-mono font-bold text-white/55 flex items-center justify-center leading-none">
+                          {idx + 1}
+                        </kbd>
                         <Icon className="w-6 h-6" style={{ color: stats.color, filter: `drop-shadow(0 0 4px ${stats.color}99)` }} />
                         {locked && (
                           <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/55">
@@ -612,6 +632,60 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             </div>
           </section>
 
+          {/* NEXT WAVE PREVIEW — shown between waves so the build can answer the threat */}
+          {gameState.isWaveReady && !gameState.isGameOver && (() => {
+            const nextWave = gameState.waveNumber + 1;
+            const cfg = getWaveConfig(nextWave);
+            const modHex = MODIFIER_HEX[cfg.modifier];
+            return (
+              <section className={panelCls}>
+                <SectionHeader
+                  icon={Radar}
+                  label={`Incoming · Wave ${nextWave}`}
+                  accent="#ffb800"
+                  right={<span className="text-[10px] font-mono font-bold text-accent-amber tabular-nums">×{cfg.count}</span>}
+                />
+                {cfg.modifier !== WaveModifier.NONE && (
+                  <div className="px-4 py-1.5 flex items-center gap-2" style={{ backgroundColor: `${modHex}10`, borderBottom: `1px solid ${modHex}30` }}>
+                    <Zap className="w-3 h-3 shrink-0" style={{ color: modHex }} />
+                    <span className="text-[9px] font-black font-mono uppercase" style={{ color: modHex }}>{MODIFIER_STYLE[cfg.modifier].label}</span>
+                    <span className="text-[8px] font-mono opacity-60 ml-auto" style={{ color: modHex }}>{MODIFIER_STYLE[cfg.modifier].desc}</span>
+                  </div>
+                )}
+                <div className="p-3 space-y-2">
+                  {cfg.enemyTypes.map(key => {
+                    const e = ENEMY_TYPES[key];
+                    const hp = Math.round(getEnemyHealth(key, nextWave, cfg.healthMult));
+                    const res = Object.entries(e.resistances ?? {}) as [DamageType, number][];
+                    return (
+                      <div key={key} className="rounded-lg bg-black/30 border border-white/[0.05] px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: e.color, boxShadow: `0 0 6px ${e.color}` }} />
+                          <span className="text-[10px] font-bold text-white/85 truncate">{e.name}</span>
+                          <span className="ml-auto text-[9px] font-mono text-white/45 tabular-nums">{hp} HP · {Math.round(e.speed * cfg.speedMult)} SPD</span>
+                        </div>
+                        {res.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {res.map(([dt, mult]) => (
+                              <span
+                                key={dt}
+                                className={`text-[7px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${
+                                  mult > 1 ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-red-500/10 border-red-500/25 text-red-300'
+                                }`}
+                              >
+                                {mult > 1 ? 'Weak' : 'Resists'} {dt} ×{mult}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })()}
+
           {/* BATTLEFIELD INTEL */}
           <section className={panelCls}>
             <SectionHeader
@@ -625,7 +699,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               {[
                 { label: 'Deployed', value: towers.length.toString(), color: '#00f2ff', icon: Cpu },
                 { label: 'Status', value: gameState.isWaveReady ? 'STANDBY' : 'ACTIVE', color: gameState.isWaveReady ? '#8b949e' : '#ff4d4d', pulse: !gameState.isWaveReady, icon: Activity },
-                { label: 'Wave Bonus', value: `$${gameState.isWaveReady ? 120 + gameState.waveNumber * 25 : 120 + (gameState.waveNumber - 1) * 25}`, color: '#ffb800', icon: CreditCard },
+                { label: 'Wave Bonus', value: `$${getWaveBonus(gameState.isWaveReady ? gameState.waveNumber + 1 : gameState.waveNumber)}`, color: '#ffb800', icon: CreditCard },
                 { label: 'Integrity', value: `${Math.round((gameState.lives / INITIAL_LIVES) * 100)}%`, color: gameState.lives > 10 ? '#00f2ff' : gameState.lives > 5 ? '#ffb800' : '#ff4d4d', pulse: gameState.lives <= 5, icon: Shield },
               ].map(({ label, value, color, pulse, icon: Icon }) => (
                 <div key={label} className="relative rounded-lg bg-black/30 border border-white/[0.05] px-3 py-2.5 overflow-hidden">
@@ -723,9 +797,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               </p>
               
               {(() => {
-                const upcoming = WAVES[gameState.waveNumber];
-                const mod = upcoming?.modifier;
-                if (!mod || mod === WaveModifier.NONE) return null;
+                const mod = getWaveConfig(gameState.waveNumber + 1).modifier;
+                if (mod === WaveModifier.NONE) return null;
                 const m = MODIFIER_STYLE[mod];
                 return (
                   <div className={`mb-4 px-5 py-2 border rounded-lg flex flex-col items-center gap-0.5 ${

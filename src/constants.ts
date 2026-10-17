@@ -1,10 +1,15 @@
-import { TowerType, TowerStats, EnemyType, Point, DamageType, WaveModifier } from './types';
+import { TowerType, TowerStats, EnemyType, Point, DamageType, WaveModifier, TowerInstance } from './types';
 
 export const CANVAS_WIDTH = 1000;
 export const CANVAS_HEIGHT = 800;
 export const INITIAL_MONEY = 500;
 export const INITIAL_LIVES = 20;
 export const RELOCATION_FEE = 40;
+export const SELL_REFUND_RATIO = 0.6;
+export const GAME_SPEEDS = [1, 2, 3];
+
+// Refund a fixed share of everything spent on the tower, so specializing never wipes its value
+export const getSellValue = (tower: TowerInstance) => Math.floor(tower.invested * SELL_REFUND_RATIO);
 
 export const PATH: Point[] = [
   { x: 0, y: 100 },
@@ -61,7 +66,7 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     damageType: DamageType.KINETIC,
     name: 'Titan Vulcan',
     description: 'Heavy kinetic platform. Trades range for raw stopping power. Best sustained DPS against armored single targets.',
-    range: 160,
+    range: 170,
     damage: 15,
     fireRate: 3.5,
     cost: 300,
@@ -85,9 +90,9 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     damageType: DamageType.ENERGY,
     name: 'Piercer Rail',
     description: 'Penetrating energy beam punches through multiple enemies in a line. One shot can hit an entire column.',
-    range: 320,
-    damage: 35,
-    fireRate: 0.4,
+    range: 360,
+    damage: 75,
+    fireRate: 0.55,
     cost: 450,
     color: '#a855f7',
     projectileSpeed: 1000,
@@ -99,8 +104,8 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     name: 'Hyper Rail',
     description: 'Extreme long-range annihilator. Fires rarely but one shot obliterates almost anything. Ideal for boss elimination.',
     range: 400,
-    damage: 120,
-    fireRate: 0.25,
+    damage: 220,
+    fireRate: 0.3,
     cost: 450,
     color: '#d8b4fe',
     projectileSpeed: 1200,
@@ -110,9 +115,9 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     damageType: DamageType.FROST,
     name: 'Cryo Mortar',
     description: 'Frost-shell mortar freezes clusters on impact. Slows all enemies in blast zone by 50% for 2 seconds. Pairs well with high-damage towers.',
-    range: 130,
-    damage: 10,
-    fireRate: 0.6,
+    range: 150,
+    damage: 22,
+    fireRate: 0.7,
     cost: 350,
     color: '#0ea5e9',
     projectileSpeed: 300,
@@ -124,8 +129,8 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     damageType: DamageType.FIRE,
     name: 'Heavy Bomber',
     description: 'Incendiary payload ignites all enemies in a wide blast. Burning deals 12 dmg/sec for 4 seconds after impact — damage stacks with direct hit.',
-    range: 140,
-    damage: 40,
+    range: 150,
+    damage: 50,
     fireRate: 0.35,
     cost: 350,
     color: '#f87171',
@@ -206,3 +211,48 @@ export const WAVES = [
   { count: 2,  interval: 2.0, enemyTypes: ['COLOSSUS'], modifier: WaveModifier.ELITE },
   { count: 150, interval: 0.05, enemyTypes: ['INTERCEPTOR', 'PHANTOM'], modifier: WaveModifier.RUSH },
 ];
+
+export interface WaveConfig {
+  count: number;          // Enemies actually spawned (modifier already applied)
+  interval: number;
+  enemyTypes: string[];
+  modifier: WaveModifier;
+  healthMult: number;
+  speedMult: number;
+  rewardMult: number;
+}
+
+// Single source of truth for a wave's composition — used by the engine and the preview UI
+export const getWaveConfig = (waveNumber: number): WaveConfig => {
+  let wave = WAVES[waveNumber - 1];
+  if (!wave) {
+    // Procedural scaling past the scripted waves
+    const baseWave = WAVES[(waveNumber - 1) % WAVES.length];
+    const difficultyScale = Math.floor(waveNumber / WAVES.length);
+    wave = {
+      count: Math.floor(baseWave.count * (1 + difficultyScale * 0.8)),
+      interval: baseWave.interval * Math.pow(0.85, difficultyScale),
+      enemyTypes: baseWave.enemyTypes,
+      modifier: baseWave.modifier,
+    };
+  }
+  const modifier = wave.modifier ?? WaveModifier.NONE;
+  let count = wave.count;
+  if (modifier === WaveModifier.SWARM) count = wave.count * 2;
+  if (modifier === WaveModifier.ELITE) count = Math.ceil(wave.count * 0.5);
+  return {
+    count,
+    interval: wave.interval,
+    enemyTypes: wave.enemyTypes,
+    modifier,
+    healthMult: modifier === WaveModifier.SWARM ? 0.5 : modifier === WaveModifier.ELITE ? 2.0 : 1.0,
+    speedMult: modifier === WaveModifier.RUSH ? 1.6 : 1.0,
+    rewardMult: modifier === WaveModifier.ELITE ? 1.5 : 1.0,
+  };
+};
+
+// Slightly softer health scaling for early game
+export const getEnemyHealth = (type: string, waveNumber: number, healthMult: number) =>
+  ENEMY_TYPES[type].health * (1 + Math.max(0, waveNumber - 2) * 0.10) * healthMult;
+
+export const getWaveBonus = (waveNumber: number) => 120 + (waveNumber - 1) * 25;
