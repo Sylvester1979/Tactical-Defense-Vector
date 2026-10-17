@@ -115,8 +115,12 @@ export interface Projectile {
   slowEffect?: number;
   burnDamage?: number;
   burnDuration?: number;
-  progress: number; // 0 to 1
+  progress: number; // Flight fraction, 0 at the muzzle → 1 at the target
   hitEnemyIds: string[]; // For piercing
+  startX: number;
+  startY: number;
+  startZ: number;
+  arcHeight?: number; // Lobbed shells (mortars): apex above the straight line; they only detonate on landing
 }
 
 export interface Wave {

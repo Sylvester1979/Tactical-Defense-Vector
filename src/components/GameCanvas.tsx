@@ -243,6 +243,17 @@ const drawGlowRing = (ctx: CanvasRenderingContext2D, x: number, y: number, rx: n
   ctx.drawImage(sprite, x - hw, y - hh);
 };
 
+// A world-space circle of radius r projects to an axis-aligned ellipse with these radii
+const isoRadiusX = (r: number) => r * ISO_SCALE * Math.SQRT2;
+const isoRadiusY = (r: number) => r * ISO_SCALE * Math.SQRT2 * 0.5;
+
+// Point along a lobbed shell's parabola at flight fraction f (matches the engine's flight model)
+const shellPointAt = (p: Projectile, f: number) => ({
+  x: p.startX + (p.targetX - p.startX) * f,
+  y: p.startY + (p.targetY - p.startY) * f,
+  z: p.startZ + (p.targetZ - p.startZ) * f + (p.arcHeight ?? 0) * 4 * f * (1 - f),
+});
+
 // Health bars stay up this long after the last hit, fading over the final stretch
 const HEALTH_BAR_VISIBLE_MS = 2500;
 const HEALTH_BAR_FADE_MS = 500;
@@ -258,6 +269,122 @@ const ENEMY_GLOW_SHAPE: Record<string, [number, number]> = {
   GUARDIAN: [0.5, 0.25],
   PHANTOM: [0.5, 0.25],
   COLOSSUS: [0.42, 0.36],
+};
+
+const drawRoundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+};
+
+// Turret kits for specializations, in the head's local frame (+x along the barrel, origin at the
+// pivot). The base head's housing stays so the family reads, but each variant swaps in its own
+// barrel/bore. `charge` is 0 right after a shot and 1 when ready; `spin` drives rotary parts.
+const drawSpecKit = (ctx: CanvasRenderingContext2D, type: TowerType, color: string, r: number, charge: number, spin: number) => {
+  switch (type) {
+    case TowerType.VULCAN_TITAN: {
+      // Side armour plates + twin heavy barrels with muzzle brakes
+      ctx.fillStyle = '#22324a'; ctx.strokeStyle = '#3a5a88'; ctx.lineWidth = 1;
+      drawRoundRect(ctx, -8 - r, -13, 14, 4, 1.5); ctx.fill(); ctx.stroke();
+      drawRoundRect(ctx, -8 - r, 9, 14, 4, 1.5); ctx.fill(); ctx.stroke();
+      [-7, 1].forEach(oy => {
+        ctx.fillStyle = '#1e3456'; ctx.fillRect(8 - r, oy, 12, 6);
+        ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(8 - r, oy, 12, 1.2);
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(8 - r, oy + 4.8, 12, 1.2);
+        ctx.fillStyle = '#0a1220'; ctx.fillRect(19 - r, oy - 1, 3, 8);
+      });
+      break;
+    }
+    case TowerType.VULCAN_STING: {
+      // Rotary cluster: four thin barrels orbiting the axis, drawn back-to-front
+      ctx.fillStyle = '#16243a'; drawRoundRect(ctx, 7 - r, -5.5, 5, 11, 1.5); ctx.fill();
+      [0, 1, 2, 3].map(k => spin + k * Math.PI / 2)
+        .sort((a, b) => Math.sin(a) - Math.sin(b))
+        .forEach(a => {
+          ctx.fillStyle = Math.sin(a) > 0 ? '#3a5f94' : '#1b2d48';
+          ctx.fillRect(11 - r, Math.cos(a) * 3.5 - 1, 11, 2);
+        });
+      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.ellipse(21 - r, 0, 1.5, 5, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case TowerType.RAILGUN_PIERCER: {
+      // Twin rails with a charging energy field between them
+      ctx.fillStyle = color; ctx.globalAlpha = 0.2 + 0.45 * charge;
+      ctx.fillRect(6 - r, -2.5, 19, 5);
+      ctx.globalAlpha = 1;
+      [-5, 3].forEach(oy => {
+        ctx.fillStyle = '#1c1a40'; ctx.fillRect(5 - r, oy, 21, 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(5 - r, oy, 21, 0.7);
+      });
+      ctx.fillStyle = '#2a2060'; ctx.fillRect(24 - r, -5.5, 2, 11);
+      break;
+    }
+    case TowerType.RAILGUN_HYPER: {
+      // Capacitor fin, extra-long barrel and three coils that light up as the shot charges
+      ctx.fillStyle = '#241a50'; ctx.fillRect(-14 - r, -9, 4, 18);
+      ctx.fillStyle = '#18183a'; ctx.fillRect(6 - r, -2.5, 26, 5);
+      ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(6 - r, -2.5, 26, 1);
+      for (let k = 0; k < 3; k++) {
+        const lit = charge >= (k + 1) / 3;
+        ctx.fillStyle = lit ? color : '#2a2350';
+        drawRoundRect(ctx, 11 + k * 6 - r, -4.5, 3, 9, 1); ctx.fill();
+      }
+      ctx.lineWidth = 1.5; ctx.strokeStyle = color;
+      ctx.beginPath(); ctx.arc(32 - r, 0, 3.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#050508';
+      ctx.beginPath(); ctx.arc(32 - r, 0, 2, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case TowerType.MORTAR_CRYO: {
+      // Coolant tank on the back + frosted bore with vents
+      ctx.fillStyle = '#0c2a3a'; ctx.strokeStyle = color; ctx.lineWidth = 1;
+      drawRoundRect(ctx, -18 - r, -6, 8, 12, 3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = color; ctx.globalAlpha = 0.6; ctx.fillRect(-16.5 - r, -3, 5, 6); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#04121a'; ctx.fillRect(6 - r, -8, 9, 16);
+      ctx.fillStyle = color; ctx.globalAlpha = 0.45; ctx.fillRect(7 - r, -6, 6, 12); ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#bae6fd'; ctx.lineWidth = 1.5; ctx.strokeRect(6 - r, -8, 9, 16);
+      ctx.strokeStyle = 'rgba(186,230,253,0.6)'; ctx.lineWidth = 1;
+      [-4, 0, 4].forEach(oy => { ctx.beginPath(); ctx.moveTo(8 - r, oy); ctx.lineTo(13 - r, oy); ctx.stroke(); });
+      break;
+    }
+    case TowerType.MORTAR_BOMBER: {
+      // Hazard-striped rear deck + twin incendiary bores that glow hot after firing
+      ctx.save();
+      drawRoundRect(ctx, -11 - r, -11, 22, 22, 4); ctx.clip();
+      ctx.fillStyle = 'rgba(255,184,0,0.4)';
+      for (let k = -2; k < 3; k++) {
+        ctx.beginPath();
+        ctx.moveTo(-11 - r, k * 8); ctx.lineTo(-6 - r, k * 8 - 5); ctx.lineTo(-6 - r, k * 8 - 1); ctx.lineTo(-11 - r, k * 8 + 4);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+      [-9, 1].forEach(oy => {
+        ctx.fillStyle = '#140606'; ctx.fillRect(5 - r, oy, 11, 8);
+        ctx.fillStyle = color; ctx.globalAlpha = 0.3 + 0.5 * (1 - charge);
+        ctx.fillRect(6 - r, oy + 1.5, 8, 5);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color; ctx.lineWidth = 1.2; ctx.strokeRect(5 - r, oy, 11, 8);
+      });
+      break;
+    }
+  }
+};
+
+// Where the muzzle flash sits along the barrel, per tower type
+const MUZZLE_X: Partial<Record<TowerType, number>> = {
+  [TowerType.BASIC]: 16, [TowerType.VULCAN_TITAN]: 21, [TowerType.VULCAN_STING]: 21,
+  [TowerType.SNIPER]: 22, [TowerType.RAILGUN_PIERCER]: 25, [TowerType.RAILGUN_HYPER]: 32,
+  [TowerType.SPLASH]: 14, [TowerType.MORTAR_CRYO]: 14, [TowerType.MORTAR_BOMBER]: 15,
 };
 
 interface GameCanvasProps {
@@ -326,19 +453,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     if (strokeStyle) { ctx.strokeStyle = strokeStyle; ctx.lineWidth = lineWidth; ctx.stroke(); }
   };
 
-  const drawRoundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.arcTo(x + w, y, x + w, y + r, r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-    ctx.lineTo(x + r, y + h);
-    ctx.arcTo(x, y + h, x, y + h - r, r);
-    ctx.lineTo(x, y + r);
-    ctx.arcTo(x, y, x + r, y, r);
-    ctx.closePath();
-  };
 
   const drawPrism = (ctx: CanvasRenderingContext2D, x: number, y: number, z: number, r: number, h: number, sides: number, color: string, topColor: string, alpha: number = 1.0, edgeColor?: string) => {
     const b = []; const t = [];
@@ -901,6 +1015,34 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
     }
 
+    // Mortar shells: landing marker (blast radius + closing timing ring) and a ground shadow
+    // that tightens as the shell comes down — drawn on the ground, under every entity
+    projectiles.forEach(p => {
+      if (!p.arcHeight) return;
+      const color = TOWER_STATS[p.type].color;
+      const blast = TOWER_STATS[p.type].splashRadius ?? 40;
+      const f = p.progress;
+      const c = toIso(p.targetX, p.targetY, roadHeight + 0.5);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.globalAlpha = 0.15 + 0.45 * f;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, isoRadiusX(blast), isoRadiusY(blast), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      const inner = blast * (1 - f);
+      if (inner > 1) {
+        ctx.globalAlpha = 0.25 + 0.5 * f;
+        ctx.beginPath(); ctx.ellipse(c.x, c.y, isoRadiusX(inner), isoRadiusY(inner), 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      const sh = toIso(p.x, p.y, roadHeight + 0.5);
+      const sr = 3 + 4 * f;
+      ctx.globalAlpha = 0.2 + 0.35 * f;
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.ellipse(sh.x, sh.y, sr, sr * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+
     // Overlay items gathered during the world pass and drawn after bloom
     const healthBars: { x: number; y: number; w: number; h: number; pct: number; alpha: number }[] = [];
 
@@ -1064,18 +1206,35 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       } else if (obj.type === 'projectile') {
         const p = obj.data as Projectile;
         const pt = toIso(p.x, p.y, p.z);
-        drawGlowDot(ctx, pt.x, pt.y, 3, TOWER_STATS[p.type].color, 4);
-
-        // Tracer line
-        ctx.strokeStyle = TOWER_STATS[p.type].color;
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.3;
-        ctx.beginPath();
-        const tailPt = toIso(p.x - (p.targetX - p.x)*0.1, p.y - (p.targetY - p.y)*0.1, p.z - (p.targetZ - p.z)*0.1);
-        ctx.moveTo(pt.x, pt.y);
-        ctx.lineTo(tailPt.x, tailPt.y);
-        ctx.stroke();
-        ctx.globalAlpha = 1.0;
+        const pColor = TOWER_STATS[p.type].color;
+        if (p.arcHeight) {
+          // Smoke trail sampled back along the parabola
+          ctx.strokeStyle = pColor;
+          ctx.lineWidth = 2;
+          ctx.lineCap = 'round';
+          ctx.globalAlpha = 0.35;
+          ctx.beginPath();
+          for (let k = 0; k <= 4; k++) {
+            const tp = shellPointAt(p, Math.max(0, p.progress - k * 0.03));
+            const sp = toIso(tp.x, tp.y, tp.z);
+            if (k === 0) ctx.moveTo(sp.x, sp.y); else ctx.lineTo(sp.x, sp.y);
+          }
+          ctx.stroke();
+          ctx.globalAlpha = 1.0;
+          drawGlowDot(ctx, pt.x, pt.y, 4.5, pColor, 6);
+        } else {
+          drawGlowDot(ctx, pt.x, pt.y, 3, pColor, 4);
+          // Tracer line
+          ctx.strokeStyle = pColor;
+          ctx.lineWidth = 1;
+          ctx.globalAlpha = 0.3;
+          ctx.beginPath();
+          const tailPt = toIso(p.x - (p.targetX - p.x)*0.1, p.y - (p.targetY - p.y)*0.1, p.z - (p.targetZ - p.z)*0.1);
+          ctx.moveTo(pt.x, pt.y);
+          ctx.lineTo(tailPt.x, tailPt.y);
+          ctx.stroke();
+          ctx.globalAlpha = 1.0;
+        }
       } else if (obj.type === 'shard') {
         const s = obj.data as Shard;
         const pt = toIso(s.x, s.y, s.z);
@@ -1100,13 +1259,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const towerH = 40 + tower.level * 2;
         const baseSize = 22;
         const topPt = toIso(tower.x, tower.y, towerH);
-        const timeSinceFired = (Date.now() - tower.lastFired) / 1000;
+        // The engine's lastFired already counts seconds since the last shot (it accumulates dt)
+        const timeSinceFired = tower.lastFired;
         const isHovered = tower.id === hoveredTowerId;
         const isSelected = tower.id === selectedTowerId;
         const rechargeProgress = Math.min(1, timeSinceFired / (1 / stats.fireRate));
         const pulseIntensity = Math.pow(1 - rechargeProgress, 2);
         const isSniper = tower.baseType === TowerType.SNIPER;
         const isSplash = tower.baseType === TowerType.SPLASH;
+        const isSpecialized = tower.type !== tower.baseType;
 
         // --- 0. GROUND SHADOW ---
         {
@@ -1199,6 +1360,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.restore();
         }
 
+        // Tier-2 marker: specialized towers carry a second, steady ring lower on the body
+        if (isSpecialized) {
+          const b2 = toIso(tower.x, tower.y, 7 + oH * 0.5);
+          ctx.save();
+          ctx.globalAlpha = 0.85;
+          ctx.strokeStyle = stats.color;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.ellipse(b2.x, b2.y, oR + 2.5, (oR + 2.5) * 0.5, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
         // --- 4. PIVOT BASE ---
         {
           const pivP = toIso(tower.x, tower.y, towerH - 3);
@@ -1259,6 +1433,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.globalAlpha = 1;
           ctx.fillStyle = '#fff';
           ctx.beginPath(); ctx.arc(-1 - recoil, -1, 1.1, 0, Math.PI * 2); ctx.fill();
+          if (!isSpecialized) {
           // Long barrel
           ctx.fillStyle = '#18183a';
           ctx.fillRect(6 - recoil, -2.5, 16, 5);
@@ -1274,6 +1449,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.shadowBlur = 0;
           ctx.fillStyle = '#050508';
           ctx.beginPath(); ctx.arc(22 - recoil, 0, 2, 0, Math.PI * 2); ctx.fill();
+          }
 
         } else if (isSplash) {
           // NOVA MORTAR: chunky square housing + wide bore
@@ -1294,6 +1470,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.fillRect(-7 - recoil,  10, 14, 2);
           ctx.fillStyle = 'rgba(255,255,255,0.05)';
           ctx.fillRect(-7 - recoil, -12, 14, 0.5);
+          if (!isSpecialized) {
           // Wide bore tube
           ctx.fillStyle = '#0d0505';
           ctx.fillRect(6 - recoil, -8, 9, 16);
@@ -1306,6 +1483,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.shadowBlur = 0;
           ctx.fillStyle = 'rgba(255,255,255,0.08)';
           ctx.fillRect(6 - recoil, -8, 9, 2);
+          }
 
         } else {
           // RAPID VULCAN: squat aggressive head + double barrels
@@ -1330,7 +1508,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.fillStyle = '#fff';
           ctx.beginPath(); ctx.arc(-1 - recoil, -1, 0.9, 0, Math.PI * 2); ctx.fill();
           // Double barrels with tube shading
-          ([-6, 3] as number[]).forEach(oy => {
+          if (!isSpecialized) ([-6, 3] as number[]).forEach(oy => {
             ctx.fillStyle = '#1e3456';
             ctx.fillRect(8 - recoil, oy, 9, 4);
             ctx.fillStyle = 'rgba(255,255,255,0.14)';
@@ -1342,10 +1520,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           });
         }
 
+        if (isSpecialized) {
+          const spin = (Date.now() / 1000) * (timeSinceFired < 0.4 ? 30 : 3);
+          drawSpecKit(ctx, tower.type, stats.color, recoil, rechargeProgress, spin);
+        }
+
         // Muzzle flash
         if (timeSinceFired < 0.06) {
           const flashAlpha = 1 - timeSinceFired / 0.06;
-          const flashX = isSniper ? 22 : isSplash ? 14 : 16;
+          const flashX = MUZZLE_X[tower.type] ?? 16;
           const flashR = isSniper ? 7 : isSplash ? 11 : 9;
           ctx.save();
           ctx.globalAlpha = flashAlpha;
@@ -1615,7 +1798,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           
           // Range circle
           ctx.beginPath();
-          ctx.ellipse(rP.x, rP.y, range, range * 0.5, 0, 0, Math.PI * 2);
+          ctx.ellipse(rP.x, rP.y, isoRadiusX(range), isoRadiusY(range), 0, 0, Math.PI * 2);
           ctx.strokeStyle = color;
           ctx.setLineDash([5, 5]);
           ctx.stroke();
