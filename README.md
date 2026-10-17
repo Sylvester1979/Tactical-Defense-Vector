@@ -35,6 +35,7 @@ npm run lint     # type-check
 | `Space` | Start next wave |
 | `P` | Pause / resume |
 | `F` | Game speed 1× / 2× / 3× |
+| `M` | Mute / unmute sound |
 | `U` | Overclock selected tower |
 | `S` `S` | Sell selected tower (press twice) |
 | `R` | Relocate selected tower |

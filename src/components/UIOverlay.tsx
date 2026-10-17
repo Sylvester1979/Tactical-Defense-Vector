@@ -18,7 +18,9 @@ import {
   Crosshair,
   Bomb,
   Lock,
-  Radar
+  Radar,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
 import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode, DamageType } from '../types';
@@ -31,6 +33,8 @@ interface UIOverlayProps {
   onPauseToggle: () => void;
   onRestart: () => void;
   onCycleSpeed: () => void;
+  muted: boolean;
+  onToggleMute: () => void;
   onPlaceTower: (type: TowerType) => void;
   onUpgradeTower: (id: string) => void;
   onSpecializeTower: (id: string, type: TowerType) => void;
@@ -88,6 +92,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onPauseToggle,
   onRestart,
   onCycleSpeed,
+  muted,
+  onToggleMute,
   onUpgradeTower,
   onSpecializeTower,
   onSellTower,
@@ -398,6 +404,18 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             }`}
           >
             {gameState.gameSpeed}×
+          </button>
+
+          {/* Sound */}
+          <button
+            onClick={onToggleMute}
+            title={muted ? 'Unmute (M)' : 'Mute (M)'}
+            className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.09] hover:border-white/[0.18] transition-all group"
+          >
+            {muted
+              ? <VolumeX className="w-4 h-4 text-white/35 group-hover:text-white transition-colors" />
+              : <Volume2 className="w-4 h-4 text-white/55 group-hover:text-white transition-colors" />
+            }
           </button>
 
           {/* Restart */}

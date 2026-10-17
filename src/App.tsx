@@ -5,6 +5,7 @@ import { useGame } from './hooks/useGame';
 import { TowerType, TargetingMode } from './types';
 import { TOWER_STATS, GAME_SPEEDS, getSellValue, INITIAL_LIVES } from './constants';
 import { toIso } from './lib/iso';
+import { unlockAudio, isMuted, setMuted } from './lib/audio';
 
 // Helper for 2.5D hit detection: distance from point to vertical segment
 const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
@@ -41,6 +42,21 @@ export default function App() {
   } = useGame();
 
   const [placingType, setPlacingType] = useState<TowerType | null>(null);
+  const [muted, setMutedState] = useState(isMuted);
+  const toggleMute = React.useCallback(() => {
+    setMutedState(m => { setMuted(!m); return !m; });
+  }, []);
+
+  // Browsers only start audio after a user gesture
+  React.useEffect(() => {
+    const unlock = () => unlockAudio();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   const cycleSpeed = React.useCallback(() => setGameState(s => ({
     ...s,
@@ -93,6 +109,9 @@ export default function App() {
         return;
       case 'f':
         cycleSpeed();
+        return;
+      case 'm':
+        toggleMute();
         return;
     }
 
@@ -179,6 +198,8 @@ export default function App() {
         onPauseToggle={() => setGameState(s => ({ ...s, isPaused: !s.isPaused }))}
         onRestart={restart}
         onCycleSpeed={cycleSpeed}
+        muted={muted}
+        onToggleMute={toggleMute}
         bestWaves={bestWaves}
         newRecord={newRecord}
         restoredFromSave={restoredFromSave}
