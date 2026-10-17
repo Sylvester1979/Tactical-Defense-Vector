@@ -3,6 +3,7 @@ import { TowerInstance, EnemyInstance, Projectile, Particle, FloatingText, Point
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PATH, TOWER_STATS, ENEMY_TYPES } from '../constants';
 
 import { toIso, fromIso, ISO_SCALE } from '../lib/iso';
+import { checkPlacement } from '../lib/placement';
 
 // Helper for hover detection
 const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
@@ -242,6 +243,14 @@ const drawGlowRing = (ctx: CanvasRenderingContext2D, x: number, y: number, rx: n
   ctx.drawImage(sprite, x - hw, y - hh);
 };
 
+// Health bars stay up this long after the last hit, fading over the final stretch
+const HEALTH_BAR_VISIBLE_MS = 2500;
+const HEALTH_BAR_FADE_MS = 500;
+
+// Armored (Bastion) look: dark hull with a light rim and a softer halo
+const ARMORED_HULL = '#4b5a70';
+const ARMORED_HALO_ALPHA = 0.5;
+
 // Halo footprint per enemy hull, as fractions of its size (rx, ry)
 const ENEMY_GLOW_SHAPE: Record<string, [number, number]> = {
   SCOUT: [0.42, 0.42],
@@ -298,6 +307,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
   const [hoveredTowerId, setHoveredTowerId] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<Point>({ x: 0, y: 0 });
+  // Live validity of the placement/relocation ghost under the cursor
+  const ghostCheck = (placingType || relocatingTowerId)
+    ? checkPlacement(mousePos, towers, relocatingTowerId ?? undefined)
+    : 'OK';
 
   // Hoisted drawing helpers
   const drawIsoPoly = (ctx: CanvasRenderingContext2D, points: {x: number, y: number}[], fillStyle?: string, strokeStyle?: string, lineWidth: number = 1) => {
@@ -888,6 +901,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
     }
 
+    // Overlay items gathered during the world pass and drawn after bloom
+    const healthBars: { x: number; y: number; w: number; h: number; pct: number; alpha: number }[] = [];
+
     // Z-SORTING AND RENDERING
     const renderables = [
       ...enemies.map(e => ({ type: 'enemy', data: e, depth: e.x + e.y })),
@@ -953,8 +969,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const bodyColor = isHit ? '#fff' : type.color;
         if (enemy.type === 'PHANTOM') ctx.globalAlpha = 0.4 + Math.sin(animTime * 8) * 0.1;
         const [grx, gry] = ENEMY_GLOW_SHAPE[enemy.type] ?? [0.5, 0.25];
-        drawGlowHalo(ctx, 0, 0, s * grx, s * gry, bodyColor, isHit ? 15 : Math.round(10 + Math.sin(animTime * 4) * 5));
-        ctx.fillStyle = bodyColor;
+        // The halo keeps the type colour even on a hit flash: white halos from constantly-hit
+        // clusters merged into one blown-out blob under bloom, hiding what the enemies were
+        const isArmored = enemy.type === 'GUARDIAN';
+        if (isArmored) ctx.globalAlpha *= ARMORED_HALO_ALPHA;
+        drawGlowHalo(ctx, 0, 0, s * grx, s * gry, type.color, Math.round(10 + Math.sin(animTime * 4) * 5));
+        if (isArmored) ctx.globalAlpha /= ARMORED_HALO_ALPHA;
+        // Armored hulls are dark steel: a light-grey body sits above the bloom threshold, and a
+        // queue of them (slow + often frozen) used to merge into one white mass
+        ctx.fillStyle = isArmored && !isHit ? ARMORED_HULL : bodyColor;
 
         ctx.beginPath();
         if (enemy.type === 'SCOUT') {
@@ -994,6 +1017,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.rect(-s/2, -s/4, s, s/2);
         }
         ctx.fill();
+        // Dark outline keeps overlapping enemies readable as separate units
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        if (isArmored) {
+          ctx.strokeStyle = type.color;
+          ctx.globalAlpha *= 0.8;
+          ctx.stroke();
+          ctx.globalAlpha /= 0.8;
+          drawGlowDot(ctx, 0, 0, 2, type.color, 4);
+        }
 
         // Reset alpha — PHANTOM sets it to ~0.4 for its ghost body and must not bleed
         // into the status effects / health bar below.
@@ -1015,13 +1049,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.restore();
         }
 
-        // Health bar — hidden at full health to cut visual clutter
+        // Health bar — queued and drawn after bloom (it's information, not a light source).
+        // Shown only while the enemy is taking damage, fading out after; bosses always show it.
         if (healthPct < 0.999) {
-          const barY = -s/2 - 5;
-          ctx.fillStyle = 'rgba(0,0,0,0.5)';
-          ctx.fillRect(-s/2, barY, s, 3);
-          ctx.fillStyle = healthPct > 0.5 ? '#00ff00' : healthPct > 0.25 ? '#ffff00' : '#ff0000';
-          ctx.fillRect(-s/2, barY, s * healthPct, 3);
+          const isBoss = enemy.type === 'COLOSSUS';
+          const recent = enemy.burnDuration > 0 ? 0 : timeSinceHit;
+          const fade = isBoss ? 1 : Math.max(0, Math.min(1, (HEALTH_BAR_VISIBLE_MS - recent) / HEALTH_BAR_FADE_MS));
+          if (fade > 0) {
+            const w = Math.max(14, s);
+            healthBars.push({ x: pt.x - w / 2, y: pt.y - s / 2 - 6, w, h: isBoss ? 3 : 2, pct: healthPct, alpha: fade });
+          }
         }
         ctx.restore();
       } else if (obj.type === 'projectile') {
@@ -1444,17 +1481,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.restore();
     });
 
-    // Draw Floating Texts
-    floatingTexts.forEach(t => {
-      const pt = toIso(t.x, t.y, 30 + (1 - t.life) * 50);
-      ctx.globalAlpha = t.life;
-      ctx.fillStyle = t.color;
-      ctx.font = 'bold 12px "JetBrains Mono"';
-      ctx.textAlign = 'center';
-      ctx.fillText(t.text, pt.x, pt.y);
-    });
-    ctx.globalAlpha = 1.0;
-
     // ── BLOOM PASS ───────────────────────────────────────────────────────────
     // Two-layer HDR bloom:
     //   · Extract bright pixels at 1/4 resolution with heavy brightness + saturate
@@ -1499,6 +1525,31 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       }
     }
+
+    // ── HUD OVERLAYS (after bloom so they stay crisp and don't feed the glow) ──
+    healthBars.forEach(b => {
+      ctx.globalAlpha = b.alpha;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(b.x - 0.5, b.y - 0.5, b.w + 1, b.h + 1);
+      ctx.fillStyle = b.pct > 0.5 ? '#4ade80' : b.pct > 0.25 ? '#facc15' : '#f87171';
+      ctx.fillRect(b.x, b.y, b.w * b.pct, b.h);
+    });
+    ctx.globalAlpha = 1.0;
+
+    // Floating texts, with a dark outline for contrast instead of glow
+    ctx.font = 'bold 12px "JetBrains Mono"';
+    ctx.textAlign = 'center';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.65)';
+    floatingTexts.forEach(t => {
+      const pt = toIso(t.x, t.y, 30 + (1 - t.life) * 50);
+      ctx.globalAlpha = Math.max(0, t.life);
+      ctx.strokeText(t.text, pt.x, pt.y);
+      ctx.fillStyle = t.color;
+      ctx.fillText(t.text, pt.x, pt.y);
+    });
+    ctx.globalAlpha = 1.0;
 
     // Post-Process (Cinematic Vignette & Scanlines)
     const renderPostProcess = () => {
@@ -1557,6 +1608,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
        }
 
        if (stats && towerH !== undefined && color && range) {
+          const invalid = ghostCheck !== 'OK';
+          if (invalid) color = 'rgba(255, 77, 77, 0.4)';
           ctx.save();
           const rP = toIso(gx, gy, 2);
           
@@ -1576,7 +1629,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           // Ghost Tower
           drawPrism(ctx, gx, gy, 0, 11, 6, 8, color, color, 0.5);
           drawPrism(ctx, gx, gy, 6, 8, towerH - 12, 4, color, color, 0.5);
-          
+
+          if (invalid) {
+            const lp = toIso(gx, gy, towerH + 14);
+            ctx.font = 'bold 9px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ff4d4d';
+            ctx.fillText(ghostCheck === 'PATH' ? 'ROAD' : 'OCCUPIED', lp.x, lp.y);
+          }
+
           ctx.restore();
        }
     }
@@ -1635,7 +1696,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       height={CANVAS_HEIGHT}
       onClick={handleClick}
       onMouseMove={handleMouseMove}
-      className={`bg-dark-bg transition-all duration-200 rounded-lg border border-slate-800 shadow-2xl ${hoveredTowerId ? 'cursor-pointer' : 'cursor-crosshair'}`}
+      className={`bg-dark-bg transition-all duration-200 rounded-lg border border-slate-800 shadow-2xl ${hoveredTowerId ? 'cursor-pointer' : ghostCheck !== 'OK' ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
       id="game-canvas"
     />
   );
