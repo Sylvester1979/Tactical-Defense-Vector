@@ -26,6 +26,7 @@ import {
   getWaveConfig,
   getEnemyHealth,
   getWaveBonus,
+  getFireInterval,
   WaveConfig
 } from '../constants';
 import { loadRun, saveRun, clearRun, loadBest, saveBest, hydrateTowers } from '../lib/storage';
@@ -209,7 +210,7 @@ export function useGame() {
       x,
       y,
       level: 1,
-      lastFired: 0,
+      lastFired: getFireInterval(type, 1), // ready to fire
       targetId: null,
       currentAngle: -Math.PI / 2,
       baseType: type,
@@ -526,7 +527,7 @@ export function useGame() {
           // 5. Tower Logic (Targeting & Firing)
           currentTowers = currentTowers.map(tower => {
             const stats = TOWER_STATS[tower.type];
-            const fireInterval = 1 / (stats.fireRate * (1 + (tower.level - 1) * 0.2));
+            const fireInterval = getFireInterval(tower.type, tower.level);
             let nextLastFired = tower.lastFired + dt;
           
             // Efficient Targeted Selection
@@ -598,6 +599,9 @@ export function useGame() {
               });
               nextLastFired -= fireInterval; // Preserve overflow for accurate ROF
             }
+            // Idle time doesn't bank shots: a tower without a target just stays ready for one.
+            // (Overflow below one interval is kept, so the rate of fire stays exact while firing.)
+            nextLastFired = Math.min(nextLastFired, fireInterval);
             return { ...tower, lastFired: nextLastFired, targetId: target?.id || null, currentAngle };
           });
 

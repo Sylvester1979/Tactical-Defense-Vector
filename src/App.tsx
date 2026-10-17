@@ -3,7 +3,7 @@ import { GameCanvas } from './components/GameCanvas';
 import { UIOverlay } from './components/UIOverlay';
 import { useGame } from './hooks/useGame';
 import { TowerType, TargetingMode } from './types';
-import { TOWER_STATS, GAME_SPEEDS, getSellValue } from './constants';
+import { TOWER_STATS, GAME_SPEEDS, getSellValue, INITIAL_LIVES } from './constants';
 import { toIso } from './lib/iso';
 
 // Helper for 2.5D hit detection: distance from point to vertical segment
@@ -203,6 +203,7 @@ export default function App() {
             relocatingTowerId={gameState.relocatingTowerId}
             placingType={placingType}
             shakeTime={gameState.shakeTime}
+            coreIntegrity={gameState.lives / INITIAL_LIVES}
             onCanvasClick={handleCanvasClick}
           />
         }
