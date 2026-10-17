@@ -30,6 +30,227 @@ const pathDirAt = (x: number, y: number) => {
   return { dirX, dirY };
 };
 
+// Static road volume (walls, surface, markings, joint caps, corner AO).
+// Nothing here animates, so GameCanvas renders it once into an offscreen layer.
+const drawRoadLayer = (ctx: CanvasRenderingContext2D, roadWidth: number, roadHeight: number) => {
+  // Draw all path sides first for better occlusion
+  ctx.fillStyle = '#0a0d11'; // Shaded X-face
+  const fillSideY = '#161b22'; // Brighter Y-face
+  
+  for (let i = 0; i < PATH.length - 1; i++) {
+    const p1 = PATH[i]; const p2 = PATH[i+1];
+    const angle = Math.atan2(p2.y-p1.y, p2.x-p1.x);
+    const perpAngle = angle + Math.PI/2;
+    const dx = Math.cos(perpAngle) * roadWidth/2;
+    const dy = Math.sin(perpAngle) * roadWidth/2;
+
+    const quad = [
+      {x: p1.x - dx, y: p1.y - dy},
+      {x: p2.x - dx, y: p2.y - dy},
+      {x: p2.x + dx, y: p2.y + dy},
+      {x: p1.x + dx, y: p1.y + dy}
+    ];
+
+    const q = quad.map(p => toIso(p.x, p.y));
+    const qt = quad.map(p => toIso(p.x, p.y, roadHeight));
+
+    // Side Wall 1 (Leftish)
+    ctx.fillStyle = Math.abs(angle) > Math.PI/2 ? fillSideY : '#0a0d11';
+    ctx.beginPath();
+    ctx.moveTo(q[0].x, q[0].y); ctx.lineTo(q[1].x, q[1].y); ctx.lineTo(qt[1].x, qt[1].y); ctx.lineTo(qt[0].x, qt[0].y);
+    ctx.closePath(); ctx.fill();
+    
+    // Side Wall 2 (Rightish)
+    ctx.fillStyle = Math.abs(angle) > Math.PI/2 ? '#0a0d11' : fillSideY;
+    ctx.beginPath();
+    ctx.moveTo(q[1].x, q[1].y); ctx.lineTo(q[2].x, q[2].y); ctx.lineTo(qt[2].x, qt[2].y); ctx.lineTo(qt[1].x, qt[1].y);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Joint Cylinder sides — front-facing arc from ground to road height
+  PATH.forEach(p => {
+    const bottomArc: {x: number; y: number}[] = [];
+    const topArc: {x: number; y: number}[] = [];
+    for (let i = 0; i <= 32; i++) {
+      const a = (i / 32) * Math.PI * 2;
+      // Visible in isometric when outward screen-normal Y component > 0
+      if (Math.cos(a) + Math.sin(a) >= 0) {
+        const px = p.x + Math.cos(a) * roadWidth / 2;
+        const py = p.y + Math.sin(a) * roadWidth / 2;
+        bottomArc.push(toIso(px, py));
+        topArc.push(toIso(px, py, roadHeight));
+      }
+    }
+    if (bottomArc.length > 1) {
+      ctx.fillStyle = '#0a0d11';
+      ctx.beginPath();
+      ctx.moveTo(bottomArc[0].x, bottomArc[0].y);
+      for (const pt of bottomArc) ctx.lineTo(pt.x, pt.y);
+      for (let i = topArc.length - 1; i >= 0; i--) ctx.lineTo(topArc[i].x, topArc[i].y);
+      ctx.closePath();
+      ctx.fill();
+    }
+  });
+
+  // Pre-compute cumulative segment distances for continuous dash offsets
+  const segStartDist: number[] = [0];
+  for (let i = 0; i < PATH.length - 1; i++) {
+    const sdx = PATH[i+1].x - PATH[i].x, sdy = PATH[i+1].y - PATH[i].y;
+    segStartDist.push(segStartDist[i] + Math.sqrt(sdx*sdx + sdy*sdy));
+  }
+
+  // Draw All Path Tops — gradient surface + hazard markings + center divider
+  for (let i = 0; i < PATH.length - 1; i++) {
+     const p1 = PATH[i]; const p2 = PATH[i+1];
+     const angle = Math.atan2(p2.y-p1.y, p2.x-p1.x);
+     const perpAngle = angle + Math.PI/2;
+     const dx = Math.cos(perpAngle) * roadWidth/2;
+     const dy = Math.sin(perpAngle) * roadWidth/2;
+
+     const q1_t = toIso(p1.x - dx, p1.y - dy, roadHeight);
+     const q2_t = toIso(p2.x - dx, p2.y - dy, roadHeight);
+     const q3_t = toIso(p2.x + dx, p2.y + dy, roadHeight);
+     const q4_t = toIso(p1.x + dx, p1.y + dy, roadHeight);
+
+     // Cross-width gradient: darker edges, slightly lighter worn center
+     const gFrom = { x: (q1_t.x + q2_t.x) / 2, y: (q1_t.y + q2_t.y) / 2 };
+     const gTo   = { x: (q3_t.x + q4_t.x) / 2, y: (q3_t.y + q4_t.y) / 2 };
+     const surfGrad = ctx.createLinearGradient(gFrom.x, gFrom.y, gTo.x, gTo.y);
+     surfGrad.addColorStop(0,    '#0f161e');
+     surfGrad.addColorStop(0.18, '#19222e');
+     surfGrad.addColorStop(0.5,  '#1e2a38');
+     surfGrad.addColorStop(0.82, '#19222e');
+     surfGrad.addColorStop(1,    '#0f161e');
+     ctx.fillStyle = surfGrad;
+     ctx.strokeStyle = '#243040';
+     ctx.lineWidth = 0.8;
+     ctx.beginPath();
+     ctx.moveTo(q1_t.x, q1_t.y); ctx.lineTo(q2_t.x, q2_t.y);
+     ctx.lineTo(q3_t.x, q3_t.y); ctx.lineTo(q4_t.x, q4_t.y);
+     ctx.closePath(); ctx.fill(); ctx.stroke();
+
+     // Hazard edge markings — continuous amber dashes along both borders
+     ctx.save();
+     ctx.lineWidth = 3;
+     ctx.setLineDash([14, 10]);
+     ctx.lineDashOffset = -segStartDist[i];
+     ctx.strokeStyle = 'rgba(255,184,0,0.28)';
+     ctx.beginPath(); ctx.moveTo(q1_t.x, q1_t.y); ctx.lineTo(q2_t.x, q2_t.y); ctx.stroke();
+     ctx.beginPath(); ctx.moveTo(q4_t.x, q4_t.y); ctx.lineTo(q3_t.x, q3_t.y); ctx.stroke();
+     ctx.setLineDash([]);
+     ctx.restore();
+
+     // Center divider — faint dashed line down the road axis
+     const c1 = { x: (q1_t.x + q4_t.x) / 2, y: (q1_t.y + q4_t.y) / 2 };
+     const c2 = { x: (q2_t.x + q3_t.x) / 2, y: (q2_t.y + q3_t.y) / 2 };
+     ctx.save();
+     ctx.strokeStyle = 'rgba(255,255,255,0.055)';
+     ctx.lineWidth = 1;
+     ctx.setLineDash([6, 14]);
+     ctx.lineDashOffset = -segStartDist[i] * 0.5;
+     ctx.beginPath(); ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.stroke();
+     ctx.setLineDash([]);
+     ctx.restore();
+  }
+  
+  // Path Caps (Joint Tops) — metallic flat cap with radial specular
+  PATH.forEach(p => {
+    const jp = toIso(p.x, p.y, roadHeight);
+    const capG = ctx.createRadialGradient(jp.x - 5, jp.y - 4, 0, jp.x, jp.y, 42);
+    capG.addColorStop(0, '#1e2e40');
+    capG.addColorStop(0.55, '#141d28');
+    capG.addColorStop(1, '#0d141e');
+    ctx.fillStyle = capG;
+    ctx.strokeStyle = '#28384e';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (let i = 0; i <= 32; i++) {
+      const a = (i / 32) * Math.PI * 2;
+      const pt = toIso(p.x + Math.cos(a) * roadWidth / 2, p.y + Math.sin(a) * roadWidth / 2, roadHeight);
+      if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  });
+
+  // Corner AO — ambient occlusion shadow at each interior waypoint
+  PATH.forEach((p, idx) => {
+    if (idx === 0 || idx === PATH.length - 1) return;
+    const jp = toIso(p.x, p.y, roadHeight + 0.5);
+    const aoG = ctx.createRadialGradient(jp.x, jp.y, 0, jp.x, jp.y, 38);
+    aoG.addColorStop(0, 'rgba(0,0,0,0.38)');
+    aoG.addColorStop(0.45, 'rgba(0,0,0,0.12)');
+    aoG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = aoG;
+    ctx.beginPath();
+    ctx.ellipse(jp.x, jp.y, 38, 19, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+};
+
+// shadowBlur is the single most expensive thing in this renderer (it blurs on every
+// draw call), so glows that repeat every frame are rasterized once into small
+// sprites keyed by their parameters and then just blitted.
+const spriteCache = new Map<string, HTMLCanvasElement>();
+const getSprite = (key: string, w: number, h: number, draw: (c: CanvasRenderingContext2D) => void) => {
+  let sprite = spriteCache.get(key);
+  if (!sprite) {
+    sprite = document.createElement('canvas');
+    sprite.width = w; sprite.height = h;
+    const c = sprite.getContext('2d');
+    if (c) draw(c);
+    spriteCache.set(key, sprite);
+  }
+  return sprite;
+};
+const q = (v: number, step = 0.5) => Math.max(step, Math.round(v / step) * step);
+
+// Solid dot with its glow — same as fill() with shadowBlur = blur
+const drawGlowDot = (ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, color: string, blur: number) => {
+  const r = q(radius, 0.25);
+  const half = Math.ceil(r + blur * 2) + 1;
+  const sprite = getSprite(`dot|${color}|${r}|${blur}`, half * 2, half * 2, c => {
+    c.fillStyle = color;
+    c.shadowBlur = blur; c.shadowColor = color;
+    c.beginPath(); c.arc(half, half, r, 0, Math.PI * 2); c.fill();
+  });
+  ctx.drawImage(sprite, x - half, y - half);
+};
+
+// Only the blurred halo of an ellipse (no solid core), centred on (x, y).
+// The source shape is drawn off-canvas and its shadow offset back into view.
+const drawGlowHalo = (ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, color: string, blur: number) => {
+  const qrx = q(rx), qry = q(ry);
+  const hw = Math.ceil(qrx + blur * 2) + 1, hh = Math.ceil(qry + blur * 2) + 1;
+  const sprite = getSprite(`halo|${color}|${qrx}|${qry}|${blur}`, hw * 2, hh * 2, c => {
+    const off = hw * 4;
+    c.fillStyle = color;
+    c.shadowBlur = blur; c.shadowColor = color; c.shadowOffsetX = off;
+    c.beginPath(); c.ellipse(hw - off, hh, qrx, qry, 0, 0, Math.PI * 2); c.fill();
+  });
+  ctx.drawImage(sprite, x - hw, y - hh);
+};
+
+// Glowing ellipse outline (slow-effect ring) — same as stroke() with shadowBlur = blur
+const drawGlowRing = (ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, color: string, lineWidth: number, blur: number) => {
+  const qrx = q(rx), qry = q(ry);
+  const hw = Math.ceil(qrx + lineWidth + blur * 2) + 1, hh = Math.ceil(qry + lineWidth + blur * 2) + 1;
+  const sprite = getSprite(`ring|${color}|${qrx}|${qry}|${lineWidth}|${blur}`, hw * 2, hh * 2, c => {
+    c.strokeStyle = color; c.lineWidth = lineWidth;
+    c.shadowBlur = blur; c.shadowColor = color;
+    c.beginPath(); c.ellipse(hw, hh, qrx, qry, 0, 0, Math.PI * 2); c.stroke();
+  });
+  ctx.drawImage(sprite, x - hw, y - hh);
+};
+
+// Halo footprint per enemy hull, as fractions of its size (rx, ry)
+const ENEMY_GLOW_SHAPE: Record<string, [number, number]> = {
+  SCOUT: [0.42, 0.42],
+  INTERCEPTOR: [0.42, 0.3],
+  GUARDIAN: [0.5, 0.25],
+  PHANTOM: [0.5, 0.25],
+  COLOSSUS: [0.42, 0.36],
+};
+
 interface GameCanvasProps {
   towers: TowerInstance[];
   enemies: EnemyInstance[];
@@ -58,6 +279,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cacheRef = useRef<HTMLCanvasElement | null>(null);
   const bloomRef = useRef<HTMLCanvasElement | null>(null);
+  const bloomHaloRef = useRef<HTMLCanvasElement | null>(null);
+  const roadCacheRef = useRef<HTMLCanvasElement | null>(null);
+  const flowHaloRef = useRef<HTMLCanvasElement | null>(null);
 
   // Shockwave rings — purely visual, driven from enemy ID diffs each frame.
   interface Shockwave { x: number; y: number; h: number; life: number; maxR: number; color: string; }
@@ -290,6 +514,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       bloomRef.current = document.createElement('canvas');
       bloomRef.current.width  = CANVAS_WIDTH  >> 2;   // 250
       bloomRef.current.height = CANVAS_HEIGHT >> 2;   // 200
+      bloomHaloRef.current = document.createElement('canvas');
+      bloomHaloRef.current.width  = bloomRef.current.width;
+      bloomHaloRef.current.height = bloomRef.current.height;
     }
 
     // Ambient embers: seeded once, drifted every frame
@@ -393,13 +620,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const wx = Math.sin(nowS * 0.8 + em.phase) * 9;
         const wy = Math.cos(nowS * 0.55 + em.phase * 1.4) * 4.5;
         const pt = toIso(em.x + wx, em.y + wy, em.z);
-        ctx.save();
         ctx.globalAlpha = em.alpha * (0.45 + 0.55 * Math.sin(nowS * 2.1 + em.phase * 2.3));
-        ctx.fillStyle = em.color;
-        ctx.shadowBlur = 5; ctx.shadowColor = em.color;
-        ctx.beginPath(); ctx.arc(pt.x, pt.y, em.size, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
+        drawGlowDot(ctx, pt.x, pt.y, em.size, em.color, 5);
       });
+      ctx.globalAlpha = 1;
     }
 
     // --- DYNAMIC GLOBAL ILLUMINATION (Projectile & Explosion Glow on ground) ---
@@ -438,160 +662,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     });
     ctx.restore();
 
-    // --- 1. THE PATH (ROAD VOLUME) ---
-    
-    // Draw all path sides first for better occlusion
-    ctx.fillStyle = '#0a0d11'; // Shaded X-face
-    const fillSideY = '#161b22'; // Brighter Y-face
-    
-    for (let i = 0; i < PATH.length - 1; i++) {
-      const p1 = PATH[i]; const p2 = PATH[i+1];
-      const angle = Math.atan2(p2.y-p1.y, p2.x-p1.x);
-      const perpAngle = angle + Math.PI/2;
-      const dx = Math.cos(perpAngle) * roadWidth/2;
-      const dy = Math.sin(perpAngle) * roadWidth/2;
-
-      const quad = [
-        {x: p1.x - dx, y: p1.y - dy},
-        {x: p2.x - dx, y: p2.y - dy},
-        {x: p2.x + dx, y: p2.y + dy},
-        {x: p1.x + dx, y: p1.y + dy}
-      ];
-
-      const q = quad.map(p => toIso(p.x, p.y));
-      const qt = quad.map(p => toIso(p.x, p.y, roadHeight));
-
-      // Side Wall 1 (Leftish)
-      ctx.fillStyle = Math.abs(angle) > Math.PI/2 ? fillSideY : '#0a0d11';
-      ctx.beginPath();
-      ctx.moveTo(q[0].x, q[0].y); ctx.lineTo(q[1].x, q[1].y); ctx.lineTo(qt[1].x, qt[1].y); ctx.lineTo(qt[0].x, qt[0].y);
-      ctx.closePath(); ctx.fill();
-      
-      // Side Wall 2 (Rightish)
-      ctx.fillStyle = Math.abs(angle) > Math.PI/2 ? '#0a0d11' : fillSideY;
-      ctx.beginPath();
-      ctx.moveTo(q[1].x, q[1].y); ctx.lineTo(q[2].x, q[2].y); ctx.lineTo(qt[2].x, qt[2].y); ctx.lineTo(qt[1].x, qt[1].y);
-      ctx.closePath(); ctx.fill();
+    // --- 1. THE PATH (ROAD VOLUME) — static, so it's rasterized once into its own layer ---
+    if (!roadCacheRef.current) {
+      roadCacheRef.current = document.createElement('canvas');
+      roadCacheRef.current.width = CANVAS_WIDTH;
+      roadCacheRef.current.height = CANVAS_HEIGHT;
+      const rctx = roadCacheRef.current.getContext('2d');
+      if (rctx) drawRoadLayer(rctx, roadWidth, roadHeight);
     }
-
-    // Joint Cylinder sides — front-facing arc from ground to road height
-    PATH.forEach(p => {
-      const bottomArc: {x: number; y: number}[] = [];
-      const topArc: {x: number; y: number}[] = [];
-      for (let i = 0; i <= 32; i++) {
-        const a = (i / 32) * Math.PI * 2;
-        // Visible in isometric when outward screen-normal Y component > 0
-        if (Math.cos(a) + Math.sin(a) >= 0) {
-          const px = p.x + Math.cos(a) * roadWidth / 2;
-          const py = p.y + Math.sin(a) * roadWidth / 2;
-          bottomArc.push(toIso(px, py));
-          topArc.push(toIso(px, py, roadHeight));
-        }
-      }
-      if (bottomArc.length > 1) {
-        ctx.fillStyle = '#0a0d11';
-        ctx.beginPath();
-        ctx.moveTo(bottomArc[0].x, bottomArc[0].y);
-        for (const pt of bottomArc) ctx.lineTo(pt.x, pt.y);
-        for (let i = topArc.length - 1; i >= 0; i--) ctx.lineTo(topArc[i].x, topArc[i].y);
-        ctx.closePath();
-        ctx.fill();
-      }
-    });
-
-    // Pre-compute cumulative segment distances for continuous dash offsets
-    const segStartDist: number[] = [0];
-    for (let i = 0; i < PATH.length - 1; i++) {
-      const sdx = PATH[i+1].x - PATH[i].x, sdy = PATH[i+1].y - PATH[i].y;
-      segStartDist.push(segStartDist[i] + Math.sqrt(sdx*sdx + sdy*sdy));
-    }
-
-    // Draw All Path Tops — gradient surface + hazard markings + center divider
-    for (let i = 0; i < PATH.length - 1; i++) {
-       const p1 = PATH[i]; const p2 = PATH[i+1];
-       const angle = Math.atan2(p2.y-p1.y, p2.x-p1.x);
-       const perpAngle = angle + Math.PI/2;
-       const dx = Math.cos(perpAngle) * roadWidth/2;
-       const dy = Math.sin(perpAngle) * roadWidth/2;
-
-       const q1_t = toIso(p1.x - dx, p1.y - dy, roadHeight);
-       const q2_t = toIso(p2.x - dx, p2.y - dy, roadHeight);
-       const q3_t = toIso(p2.x + dx, p2.y + dy, roadHeight);
-       const q4_t = toIso(p1.x + dx, p1.y + dy, roadHeight);
-
-       // Cross-width gradient: darker edges, slightly lighter worn center
-       const gFrom = { x: (q1_t.x + q2_t.x) / 2, y: (q1_t.y + q2_t.y) / 2 };
-       const gTo   = { x: (q3_t.x + q4_t.x) / 2, y: (q3_t.y + q4_t.y) / 2 };
-       const surfGrad = ctx.createLinearGradient(gFrom.x, gFrom.y, gTo.x, gTo.y);
-       surfGrad.addColorStop(0,    '#0f161e');
-       surfGrad.addColorStop(0.18, '#19222e');
-       surfGrad.addColorStop(0.5,  '#1e2a38');
-       surfGrad.addColorStop(0.82, '#19222e');
-       surfGrad.addColorStop(1,    '#0f161e');
-       ctx.fillStyle = surfGrad;
-       ctx.strokeStyle = '#243040';
-       ctx.lineWidth = 0.8;
-       ctx.beginPath();
-       ctx.moveTo(q1_t.x, q1_t.y); ctx.lineTo(q2_t.x, q2_t.y);
-       ctx.lineTo(q3_t.x, q3_t.y); ctx.lineTo(q4_t.x, q4_t.y);
-       ctx.closePath(); ctx.fill(); ctx.stroke();
-
-       // Hazard edge markings — continuous amber dashes along both borders
-       ctx.save();
-       ctx.lineWidth = 3;
-       ctx.setLineDash([14, 10]);
-       ctx.lineDashOffset = -segStartDist[i];
-       ctx.strokeStyle = 'rgba(255,184,0,0.28)';
-       ctx.beginPath(); ctx.moveTo(q1_t.x, q1_t.y); ctx.lineTo(q2_t.x, q2_t.y); ctx.stroke();
-       ctx.beginPath(); ctx.moveTo(q4_t.x, q4_t.y); ctx.lineTo(q3_t.x, q3_t.y); ctx.stroke();
-       ctx.setLineDash([]);
-       ctx.restore();
-
-       // Center divider — faint dashed line down the road axis
-       const c1 = { x: (q1_t.x + q4_t.x) / 2, y: (q1_t.y + q4_t.y) / 2 };
-       const c2 = { x: (q2_t.x + q3_t.x) / 2, y: (q2_t.y + q3_t.y) / 2 };
-       ctx.save();
-       ctx.strokeStyle = 'rgba(255,255,255,0.055)';
-       ctx.lineWidth = 1;
-       ctx.setLineDash([6, 14]);
-       ctx.lineDashOffset = -segStartDist[i] * 0.5;
-       ctx.beginPath(); ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.stroke();
-       ctx.setLineDash([]);
-       ctx.restore();
-    }
-    
-    // Path Caps (Joint Tops) — metallic flat cap with radial specular
-    PATH.forEach(p => {
-      const jp = toIso(p.x, p.y, roadHeight);
-      const capG = ctx.createRadialGradient(jp.x - 5, jp.y - 4, 0, jp.x, jp.y, 42);
-      capG.addColorStop(0, '#1e2e40');
-      capG.addColorStop(0.55, '#141d28');
-      capG.addColorStop(1, '#0d141e');
-      ctx.fillStyle = capG;
-      ctx.strokeStyle = '#28384e';
-      ctx.lineWidth = 0.8;
-      ctx.beginPath();
-      for (let i = 0; i <= 32; i++) {
-        const a = (i / 32) * Math.PI * 2;
-        const pt = toIso(p.x + Math.cos(a) * roadWidth / 2, p.y + Math.sin(a) * roadWidth / 2, roadHeight);
-        if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-    });
-
-    // Corner AO — ambient occlusion shadow at each interior waypoint
-    PATH.forEach((p, idx) => {
-      if (idx === 0 || idx === PATH.length - 1) return;
-      const jp = toIso(p.x, p.y, roadHeight + 0.5);
-      const aoG = ctx.createRadialGradient(jp.x, jp.y, 0, jp.x, jp.y, 38);
-      aoG.addColorStop(0, 'rgba(0,0,0,0.38)');
-      aoG.addColorStop(0.45, 'rgba(0,0,0,0.12)');
-      aoG.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = aoG;
-      ctx.beginPath();
-      ctx.ellipse(jp.x, jp.y, 38, 19, 0, 0, Math.PI * 2);
-      ctx.fill();
-    });
+    ctx.drawImage(roadCacheRef.current, 0, 0);
 
     // --- 2. SHADOWS (On top of road) ---
     const drawShadow = (x: number, y: number, radius: number, isEnemy: boolean = false) => {
@@ -618,35 +697,48 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     {
       const flowTime = Date.now() / 1000;
       const flowPts = PATH.map(p => toIso(p.x, p.y, roadHeight + 1));
-      // Outer glow halo (screen blend, no hard edges)
+      // Outer glow halo (screen blend, no hard edges) — static, so pre-rendered once
+      if (!flowHaloRef.current) {
+        flowHaloRef.current = document.createElement('canvas');
+        flowHaloRef.current.width = CANVAS_WIDTH;
+        flowHaloRef.current.height = CANVAS_HEIGHT;
+        const hctx = flowHaloRef.current.getContext('2d');
+        if (hctx) {
+          hctx.globalAlpha = 0.10;
+          hctx.strokeStyle = '#00f2ff';
+          hctx.lineWidth = 14;
+          hctx.lineCap = 'round';
+          hctx.lineJoin = 'round';
+          hctx.shadowBlur = 20; hctx.shadowColor = '#00f2ff';
+          hctx.beginPath();
+          hctx.moveTo(flowPts[0].x, flowPts[0].y);
+          flowPts.forEach(fp => hctx.lineTo(fp.x, fp.y));
+          hctx.stroke();
+        }
+      }
       ctx.save();
       ctx.globalCompositeOperation = 'screen';
-      ctx.globalAlpha = 0.10;
-      ctx.strokeStyle = '#00f2ff';
-      ctx.lineWidth = 14;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.shadowBlur = 20; ctx.shadowColor = '#00f2ff';
-      ctx.beginPath();
-      ctx.moveTo(flowPts[0].x, flowPts[0].y);
-      flowPts.forEach(fp => ctx.lineTo(fp.x, fp.y));
-      ctx.stroke();
+      ctx.drawImage(flowHaloRef.current, 0, 0);
       ctx.restore();
-      // Animated dash stream
+      // Animated dash stream — a wide faint pass stands in for shadowBlur glow
+      const strokeFlow = () => {
+        ctx.beginPath();
+        ctx.moveTo(flowPts[0].x, flowPts[0].y);
+        flowPts.forEach(fp => ctx.lineTo(fp.x, fp.y));
+        ctx.stroke();
+      };
       ctx.save();
-      ctx.globalAlpha = 0.30;
       ctx.strokeStyle = '#00f2ff';
-      ctx.lineWidth = 1.5;
       ctx.lineCap = 'round';
       ctx.setLineDash([8, 18]);
       ctx.lineDashOffset = -flowTime * 65;
-      ctx.shadowBlur = 8; ctx.shadowColor = '#00f2ff';
-      ctx.beginPath();
-      ctx.moveTo(flowPts[0].x, flowPts[0].y);
-      flowPts.forEach(fp => ctx.lineTo(fp.x, fp.y));
-      ctx.stroke();
+      ctx.globalAlpha = 0.08;
+      ctx.lineWidth = 6;
+      strokeFlow();
+      ctx.globalAlpha = 0.30;
+      ctx.lineWidth = 1.5;
+      strokeFlow();
       ctx.setLineDash([]);
-      ctx.shadowBlur = 0;
       ctx.restore();
     }
 
@@ -858,8 +950,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
            ctx.restore();
         }
 
-        if (isHit) { ctx.fillStyle = '#fff'; ctx.shadowBlur = 15; ctx.shadowColor = '#fff'; }
-        else { ctx.fillStyle = type.color; ctx.shadowBlur = 10 + Math.sin(animTime * 4) * 5; ctx.shadowColor = type.color; }
+        const bodyColor = isHit ? '#fff' : type.color;
+        if (enemy.type === 'PHANTOM') ctx.globalAlpha = 0.4 + Math.sin(animTime * 8) * 0.1;
+        const [grx, gry] = ENEMY_GLOW_SHAPE[enemy.type] ?? [0.5, 0.25];
+        drawGlowHalo(ctx, 0, 0, s * grx, s * gry, bodyColor, isHit ? 15 : Math.round(10 + Math.sin(animTime * 4) * 5));
+        ctx.fillStyle = bodyColor;
 
         ctx.beginPath();
         if (enemy.type === 'SCOUT') {
@@ -874,7 +969,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }
           ctx.closePath();
         } else if (enemy.type === 'PHANTOM') {
-          ctx.globalAlpha = 0.4 + Math.sin(animTime * 8) * 0.1;
           ctx.ellipse(0, 0, s/2, s/4, 0, 0, Math.PI * 2);
         } else if (enemy.type === 'COLOSSUS') {
           // Architectural Heavy Dreadnought
@@ -909,25 +1003,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (enemy.slowDuration > 0) {
           ctx.save();
           ctx.globalCompositeOperation = 'screen';
-          ctx.shadowBlur = 10;
-          ctx.shadowColor = '#0ea5e9';
-          ctx.strokeStyle = '#0ea5e9';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.ellipse(0, 0, s / 2 + 3, s / 2 + 1, 0, 0, Math.PI * 2);
-          ctx.stroke();
+          drawGlowRing(ctx, 0, 0, s / 2 + 3, s / 2 + 1, '#0ea5e9', 2, 10);
           ctx.restore();
         }
 
         if (enemy.burnDuration > 0) {
           ctx.save();
           ctx.globalCompositeOperation = 'screen';
-          ctx.shadowBlur = 8 + Math.random() * 8;
-          ctx.shadowColor = '#f87171';
-          ctx.fillStyle = `rgba(248, 113, 113, ${0.2 + Math.random() * 0.3})`;
-          ctx.beginPath();
-          ctx.ellipse(0, 0, s / 2, s / 2, 0, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.globalAlpha = 0.2 + Math.random() * 0.3;
+          drawGlowDot(ctx, 0, 0, s / 2, '#f87171', [8, 12, 16][Math.floor(Math.random() * 3)]);
           ctx.restore();
         }
 
@@ -943,11 +1027,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       } else if (obj.type === 'projectile') {
         const p = obj.data as Projectile;
         const pt = toIso(p.x, p.y, p.z);
-        ctx.fillStyle = TOWER_STATS[p.type].color;
-        ctx.shadowBlur = 4;
-        ctx.shadowColor = TOWER_STATS[p.type].color;
-        ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.shadowBlur = 0;
+        drawGlowDot(ctx, pt.x, pt.y, 3, TOWER_STATS[p.type].color, 4);
 
         // Tracer line
         ctx.strokeStyle = TOWER_STATS[p.type].color;
@@ -964,10 +1044,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const pt = toIso(s.x, s.y, s.z);
         ctx.save();
         ctx.translate(pt.x, pt.y);
-        ctx.rotate(s.angle);
         ctx.globalAlpha = Math.pow(Math.max(0, s.life), 0.55) * 0.9;
+        // Shards are tiny, so their glow is effectively round — cached halo, then the crisp shard
+        const shardBlur = Math.round(8 * s.life);
+        if (shardBlur > 0) drawGlowHalo(ctx, 0, 0, s.size * 0.8, s.size * 0.8, s.color, shardBlur);
+        ctx.rotate(s.angle);
         ctx.fillStyle = s.color;
-        ctx.shadowBlur = 8 * s.life; ctx.shadowColor = s.color;
         ctx.beginPath();
         ctx.moveTo(0, -s.size * 1.5);
         ctx.lineTo(s.size * 0.55, s.size * 0.9);
@@ -1328,10 +1410,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     particles.forEach(p => {
       const pt = toIso(p.x, p.y, p.z || 10);
       ctx.globalAlpha = (p.life / p.maxLife) * 0.8;
-      ctx.fillStyle = p.color;
-      ctx.shadowBlur = 5; ctx.shadowColor = p.color;
-      ctx.beginPath(); ctx.arc(pt.x, pt.y, p.size, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = 0;
+      drawGlowDot(ctx, pt.x, pt.y, p.size, p.color, 5);
     });
     ctx.globalAlpha = 1.0;
 
@@ -1402,14 +1481,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.drawImage(bloom, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
           ctx.restore();
 
-          // Layer 2: wide atmospheric halo (extra blur on the way back)
-          ctx.save();
-          ctx.globalCompositeOperation = 'screen';
-          ctx.globalAlpha = 0.30;
-          ctx.filter = 'blur(14px)';
-          ctx.drawImage(bloom, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-          ctx.filter = 'none';
-          ctx.restore();
+          // Layer 2: wide atmospheric halo. Blurring at 1/4 resolution (3.5px)
+          // then upscaling matches a 14px full-resolution blur at ~1/16 the cost.
+          const halo = bloomHaloRef.current;
+          const hctx = halo?.getContext('2d');
+          if (halo && hctx) {
+            hctx.clearRect(0, 0, halo.width, halo.height);
+            hctx.filter = 'blur(3.5px)';
+            hctx.drawImage(bloom, 0, 0);
+            hctx.filter = 'none';
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            ctx.globalAlpha = 0.30;
+            ctx.drawImage(halo, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            ctx.restore();
+          }
         }
       }
     }
