@@ -42,6 +42,9 @@ interface UIOverlayProps {
   placingType: TowerType | null;
   setPlacingType: (type: TowerType | null) => void;
   renderCanvas: React.ReactNode;
+  bestWaves: number;
+  newRecord: boolean;
+  restoredFromSave: boolean;
 }
 
 const MODIFIER_STYLE: Record<WaveModifier, { label: string; color: string; desc: string }> = {
@@ -91,7 +94,10 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onSetTargetingMode,
   placingType,
   setPlacingType,
-  renderCanvas
+  renderCanvas,
+  bestWaves,
+  newRecord,
+  restoredFromSave
 }) => {
   const selectedTower = towers.find(t => t.id === gameState.selectedTowerId);
 
@@ -122,7 +128,9 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   // --- Live log feed ---
   const [logEntries, setLogEntries] = React.useState<{id: number; time: string; text: string; color: string}[]>([
     { id: 0, time: '00:00', text: 'Defense matrix online.', color: '#00f2ff' },
-    { id: 1, time: '00:00', text: 'Integrity nominal. Standby.', color: '#8b949e' },
+    restoredFromSave
+      ? { id: 1, time: '00:00', text: `Session restored — wave ${gameState.waveNumber} cleared.`, color: '#10b981' }
+      : { id: 1, time: '00:00', text: 'Integrity nominal. Standby.', color: '#8b949e' },
   ]);
   const logRef = React.useRef<HTMLDivElement>(null);
   const logIdRef = React.useRef(2);
@@ -155,6 +163,10 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
     }
     prevLivesRef.current = gameState.lives;
   }, [gameState.lives, addLog]);
+
+  React.useEffect(() => {
+    if (newRecord) addLog(`New record: ${bestWaves} wave${bestWaves === 1 ? '' : 's'} cleared!`, '#10b981');
+  }, [newRecord, bestWaves, addLog]);
 
   React.useEffect(() => {
     if (gameState.isWaveReady && !prevWaveReadyRef.current && gameState.waveNumber > 0) {
@@ -300,6 +312,14 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 <span className="text-[11px] font-black font-mono text-accent-amber tabular-nums leading-none">
                   {gameState.waveNumber.toString().padStart(2, '0')}<span className="text-white/20 text-[9px]">/{WAVES.length}</span>
                 </span>
+                {bestWaves > 0 && (
+                  <span
+                    className={`text-[8px] font-mono uppercase tracking-wider leading-none tabular-nums ${newRecord ? 'text-emerald-400' : 'text-white/30'}`}
+                    title="Most waves cleared in a single run"
+                  >
+                    Best {bestWaves.toString().padStart(2, '0')}
+                  </span>
+                )}
               </div>
               <div className="mt-1.5 w-24 h-[4px] rounded-full bg-white/[0.08] overflow-hidden">
                 <div
@@ -797,6 +817,11 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               <h2 className="text-6xl font-black text-white italic tracking-tighter mb-2">
                 WAVE {gameState.waveNumber} CLEARED
               </h2>
+              {newRecord && gameState.waveNumber === bestWaves && (
+                <span className="mb-3 px-3 py-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 text-[10px] font-black font-mono uppercase tracking-[0.3em]">
+                  ★ New record
+                </span>
+              )}
               <p className="text-text-secondary font-mono text-sm leading-relaxed mb-8">
                 Defensive protocols verified. Threat level currently neutralized. 
                 Prepare resources and authorize the initiation of the next encounter cycle.
@@ -850,8 +875,13 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             </motion.h2>
             <div className="w-[400px] h-[1px] bg-accent-red/30 mb-8" />
             <p className="text-text-secondary font-mono mb-12 uppercase tracking-[0.2em] text-sm">
-               Wave {gameState.waveNumber} final survival record
+               Waves survived: {Math.max(0, gameState.waveNumber - 1)} · Best: {bestWaves}
             </p>
+            {newRecord && (
+              <span className="-mt-8 mb-10 px-4 py-1.5 rounded-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 text-xs font-black font-mono uppercase tracking-[0.3em]">
+                ★ New record
+              </span>
+            )}
             <button 
               onClick={onRestart}
               className="group relative px-12 py-4 bg-accent-red text-dark-bg font-black uppercase tracking-widest text-xl hover:bg-accent-red/90 transition-all flex items-center gap-3"
