@@ -10,3 +10,4 @@ dist/
 out/
 renders/
 *.blend1
+__pycache__/
