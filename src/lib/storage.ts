@@ -1,5 +1,5 @@
 import { TowerInstance, TowerType, TargetingMode } from '../types';
-import { TOWER_STATS } from '../constants';
+import { TOWER_STATS, getFireInterval } from '../constants';
 
 // Persistence lives in localStorage, which can be missing or throw (private mode,
 // blocked storage), so every access is guarded and the game works without it.
@@ -71,4 +71,4 @@ export const saveBest = (waves: number) => write(BEST_KEY, { waves, date: new Da
 
 // Restore runtime-only tower fields that aren't worth persisting
 export const hydrateTowers = (towers: SavedRun['towers']): TowerInstance[] =>
-  towers.map(t => ({ ...t, lastFired: 0, targetId: null, currentAngle: -Math.PI / 2 }));
+  towers.map(t => ({ ...t, lastFired: getFireInterval(t.type, t.level), targetId: null, currentAngle: -Math.PI / 2 }));

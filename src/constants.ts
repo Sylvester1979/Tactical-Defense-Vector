@@ -258,3 +258,7 @@ export const getEnemyHealth = (type: string, waveNumber: number, healthMult: num
   ENEMY_TYPES[type].health * (1 + Math.max(0, waveNumber - 2) * 0.10) * healthMult;
 
 export const getWaveBonus = (waveNumber: number) => 120 + (waveNumber - 1) * 25;
+
+// Seconds between shots for a tower type at a given level (+20% fire rate per level)
+export const getFireInterval = (type: TowerType, level: number) =>
+  1 / (TOWER_STATS[type].fireRate * (1 + (level - 1) * 0.2));
