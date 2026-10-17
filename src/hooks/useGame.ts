@@ -404,6 +404,11 @@ export function useGame() {
              return true;
           });
 
+          if (livesLost > 0) {
+            const core = PATH[PATH.length - 1];
+            createFloatingText(core.x, core.y, `−${livesLost}`, '#ff4d4d');
+          }
+
           // 3. Projectiles (Collision & Movement)
           const nextProjs: Projectile[] = [];
           currentProjectiles.forEach(p => {

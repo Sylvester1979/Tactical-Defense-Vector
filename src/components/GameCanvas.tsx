@@ -258,9 +258,80 @@ const shellPointAt = (p: Projectile, f: number) => ({
 const HEALTH_BAR_VISIBLE_MS = 2500;
 const HEALTH_BAR_FADE_MS = 500;
 
+
+// ── Enemy hulls ─────────────────────────────────────────────────────────────
+// Hulls are traced flat on the ground plane in a heading-aligned local frame (+x = forward),
+// projected through the same isometric matrix as the world, then stacked in z for volume.
+const HULL_SCALE = 1.15;   // world→screen shrinks ~0.85x; keep hulls about their old on-screen size
+const HULL_HEIGHT: Record<string, number> = { SCOUT: 3, INTERCEPTOR: 3, GUARDIAN: 8, PHANTOM: 2, COLOSSUS: 12 };
+const HULL_LAYER_STEP = 1.5;
+
+const traceHull = (ctx: CanvasRenderingContext2D, type: string, s: number, wingFlap: number) => {
+  ctx.beginPath();
+  switch (type) {
+    case 'SCOUT': // delta wing, tips flap
+      ctx.moveTo(s * 0.6, 0);
+      ctx.lineTo(-s * 0.35, -(s * 0.5 + wingFlap));
+      ctx.lineTo(-s * 0.12, 0);
+      ctx.lineTo(-s * 0.35, s * 0.5 + wingFlap);
+      break;
+    case 'INTERCEPTOR': // swept arrowhead
+      ctx.moveTo(s * 0.7, 0);
+      ctx.lineTo(-s * 0.5, -s * 0.4);
+      ctx.lineTo(-s * 0.28, 0);
+      ctx.lineTo(-s * 0.5, s * 0.4);
+      break;
+    case 'GUARDIAN': // armoured hex
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3;
+        ctx.lineTo(Math.cos(a) * s * 0.55, Math.sin(a) * s * 0.55);
+      }
+      break;
+    case 'PHANTOM':
+      ctx.ellipse(0, 0, s * 0.6, s * 0.35, 0, 0, Math.PI * 2);
+      break;
+    case 'COLOSSUS': // dreadnought wedge
+      ctx.moveTo(s * 0.6, 0);
+      ctx.lineTo(-s * 0.5, -s * 0.42);
+      ctx.lineTo(-s * 0.5, s * 0.42);
+      break;
+    default:
+      ctx.rect(-s / 2, -s / 4, s, s / 2);
+  }
+  ctx.closePath();
+};
+
+// Run `draw` with the context mapped to the ground plane at screen offset (0, dy), rotated to heading
+const withHullFrame = (ctx: CanvasRenderingContext2D, dy: number, heading: number, draw: () => void) => {
+  ctx.save();
+  ctx.translate(0, dy);
+  ctx.transform(ISO_SCALE, ISO_SCALE * 0.5, -ISO_SCALE, ISO_SCALE * 0.5, 0, 0);
+  ctx.rotate(heading);
+  ctx.scale(HULL_SCALE, HULL_SCALE);
+  draw();
+  ctx.restore();
+};
+
+// Darken a #rgb / #rrggbb colour (for hull side walls); cached since the palette is small
+const shadeCache = new Map<string, string>();
+const shade = (hex: string, f: number) => {
+  const key = `${hex}|${f}`;
+  let out = shadeCache.get(key);
+  if (!out) {
+    let h = hex.replace('#', '');
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    const n = parseInt(h, 16);
+    const ch = (v: number) => Math.round(v * f).toString(16).padStart(2, '0');
+    out = `#${ch((n >> 16) & 255)}${ch((n >> 8) & 255)}${ch(n & 255)}`;
+    shadeCache.set(key, out);
+  }
+  return out;
+};
+
 // Armored (Bastion) look: dark hull with a light rim and a softer halo
 const ARMORED_HULL = '#4b5a70';
 const ARMORED_HALO_ALPHA = 0.5;
+const COLOSSUS_HULL = '#334155';
 
 // Halo footprint per enemy hull, as fractions of its size (rx, ry)
 const ENEMY_GLOW_SHAPE: Record<string, [number, number]> = {
@@ -1119,45 +1190,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (isArmored) ctx.globalAlpha /= ARMORED_HALO_ALPHA;
         // Armored hulls are dark steel: a light-grey body sits above the bloom threshold, and a
         // queue of them (slow + often frozen) used to merge into one white mass
-        ctx.fillStyle = isArmored && !isHit ? ARMORED_HULL : bodyColor;
+        const topColor = isArmored && !isHit ? ARMORED_HULL : bodyColor;
+        const sideColor = shade(isArmored || enemy.type === 'COLOSSUS' ? (isArmored ? ARMORED_HULL : COLOSSUS_HULL) : type.color, 0.45);
+        const { dirX: hx, dirY: hy } = pathDirAt(enemy.x, enemy.y);
+        const heading = Math.atan2(hy, hx);
+        const wingFlap = enemy.type === 'SCOUT' ? Math.sin(animTime * 10) * 3 : 0;
+        const hullH = HULL_HEIGHT[enemy.type] ?? 4;
 
-        ctx.beginPath();
-        if (enemy.type === 'SCOUT') {
-          const wf = Math.sin(animTime * 10) * 4;
-          ctx.moveTo(0, -s/2); ctx.lineTo(s/2 + wf, 0); ctx.lineTo(0, s/2); ctx.lineTo(-s/2 - wf, 0); ctx.closePath();
-        } else if (enemy.type === 'INTERCEPTOR') {
-          ctx.moveTo(s/2, 0); ctx.lineTo(-s/2, -s/3); ctx.lineTo(-s/3, 0); ctx.lineTo(-s/2, s/3); ctx.closePath();
-        } else if (enemy.type === 'GUARDIAN') {
-          for (let i = 0; i < 6; i++) {
-            const a = (i * Math.PI) / 3;
-            ctx.lineTo(Math.cos(a) * s/2, Math.sin(a) * s/4);
-          }
-          ctx.closePath();
-        } else if (enemy.type === 'PHANTOM') {
-          ctx.ellipse(0, 0, s/2, s/4, 0, 0, Math.PI * 2);
-        } else if (enemy.type === 'COLOSSUS') {
-          // Architectural Heavy Dreadnought
-          ctx.save();
-          // Main Body (Triangular wedge)
-          ctx.fillStyle = '#334155';
-          ctx.beginPath();
-          ctx.moveTo(s/2, 0); ctx.lineTo(-s/2, -s/2.5); ctx.lineTo(-s/2, s/2.5); ctx.closePath();
+        // Side walls: the hull outline stacked downward in a darker tone
+        ctx.fillStyle = sideColor;
+        for (let dz = hullH; dz > 0; dz -= HULL_LAYER_STEP) {
+          withHullFrame(ctx, dz, heading, () => traceHull(ctx, enemy.type, s, wingFlap));
           ctx.fill();
-          // Mid Deck
-          ctx.fillStyle = '#1e293b';
-          ctx.beginPath();
-          ctx.moveTo(s/4, 0); ctx.lineTo(-s/2.5, -s/3.5); ctx.lineTo(-s/2.5, s/3.5); ctx.closePath();
-          ctx.fill();
-          // Navigation bridge
-          ctx.fillStyle = '#ef4444';
-          ctx.beginPath(); ctx.arc(-s/4, 0, 4, 0, Math.PI * 2); ctx.fill();
-          // Side Engine exhausts (Glow)
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
-          ctx.fillRect(-s/2 - 2, -s/4, 4, s/2);
-          ctx.restore();
-        } else {
-          ctx.rect(-s/2, -s/4, s, s/2);
         }
+        // Top face — traced in hull space, then filled/stroked in screen space so outlines stay crisp
+        withHullFrame(ctx, 0, heading, () => traceHull(ctx, enemy.type, s, wingFlap));
+        ctx.fillStyle = enemy.type === 'COLOSSUS' && !isHit ? COLOSSUS_HULL : topColor;
         ctx.fill();
         // Dark outline keeps overlapping enemies readable as separate units
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
@@ -1169,6 +1217,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.stroke();
           ctx.globalAlpha /= 0.8;
           drawGlowDot(ctx, 0, 0, 2, type.color, 4);
+        }
+        if (enemy.type === 'COLOSSUS') {
+          // Raised deck, red bridge light and engine glow at the stern
+          withHullFrame(ctx, -3, heading, () => {
+            ctx.beginPath();
+            ctx.moveTo(s * 0.3, 0); ctx.lineTo(-s * 0.4, -s * 0.28); ctx.lineTo(-s * 0.4, s * 0.28); ctx.closePath();
+          });
+          ctx.fillStyle = '#1e293b'; ctx.fill();
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; ctx.stroke();
+          withHullFrame(ctx, -3, heading, () => {
+            ctx.beginPath(); ctx.ellipse(-s * 0.18, 0, 4, 4, 0, 0, Math.PI * 2);
+          });
+          ctx.fillStyle = '#ef4444'; ctx.fill();
+          withHullFrame(ctx, 0, heading, () => {
+            ctx.beginPath(); ctx.rect(-s * 0.56, -s * 0.25, 4, s * 0.5);
+          });
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.55)'; ctx.fill();
         }
 
         // Reset alpha — PHANTOM sets it to ~0.4 for its ghost body and must not bleed

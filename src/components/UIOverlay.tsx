@@ -71,6 +71,9 @@ const MODIFIER_HEX: Record<WaveModifier, string> = {
 
 const BASE_TOWER_TYPES = [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH] as const;
 
+// How long the wave-start banner stays up
+const WAVE_BANNER_MS = 2600;
+
 type IconProps = { className?: string; style?: React.CSSProperties };
 const TOWER_ICON: Partial<Record<TowerType, React.ComponentType<IconProps>>> = {
   [TowerType.BASIC]: Crosshair,
@@ -138,6 +141,12 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   const prevLivesRef = React.useRef(gameState.lives);
   const prevWaveReadyRef = React.useRef(gameState.isWaveReady);
 
+  // Transient arena callouts: wave-start banner and core-hit flash (keys retrigger animations)
+  const [waveBanner, setWaveBanner] = React.useState<{ key: number; wave: number; count: number; modifier: WaveModifier; boss: boolean } | null>(null);
+  const [coreHit, setCoreHit] = React.useState<{ key: number; lost: number } | null>(null);
+  const bannerTimerRef = React.useRef<number | undefined>(undefined);
+  React.useEffect(() => () => window.clearTimeout(bannerTimerRef.current), []);
+
   const addLog = React.useCallback((text: string, color: string) => {
     const now = new Date();
     const time = `${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
@@ -147,6 +156,13 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   React.useEffect(() => {
     if (gameState.waveNumber !== prevWaveRef.current && gameState.waveNumber > 0) {
       addLog(`Wave ${gameState.waveNumber} ingress confirmed.`, '#ffb800');
+      const cfg = getWaveConfig(gameState.waveNumber);
+      setWaveBanner({
+        key: Date.now(), wave: gameState.waveNumber, count: cfg.count,
+        modifier: gameState.currentWaveModifier, boss: cfg.enemyTypes.includes('COLOSSUS'),
+      });
+      window.clearTimeout(bannerTimerRef.current);
+      bannerTimerRef.current = window.setTimeout(() => setWaveBanner(null), WAVE_BANNER_MS);
       if (gameState.currentWaveModifier !== WaveModifier.NONE) {
         const m = MODIFIER_STYLE[gameState.currentWaveModifier];
         addLog(`Threat modifier: ${m.label} — ${m.desc}`, MODIFIER_HEX[gameState.currentWaveModifier]);
@@ -158,6 +174,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   React.useEffect(() => {
     if (gameState.lives < prevLivesRef.current) {
       const lost = prevLivesRef.current - gameState.lives;
+      setCoreHit({ key: Date.now(), lost });
       addLog(`Core breach! −${lost} integrity unit${lost > 1 ? 's' : ''}.`, '#ef4444');
       if (gameState.lives <= 5) addLog('CRITICAL: Core integrity failing!', '#ef4444');
     }
@@ -492,6 +509,61 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                  <div key={i} className="border-[0.5px] border-border-dim" />
                ))}
             </div>
+
+            {/* Core breach flash — red edges, stronger the more lives were lost */}
+            <AnimatePresence>
+              {coreHit && (
+                <motion.div
+                  key={coreHit.key}
+                  className="absolute inset-0 pointer-events-none z-40"
+                  initial={{ opacity: Math.min(0.9, 0.35 + coreHit.lost * 0.12) }}
+                  animate={{ opacity: 0 }}
+                  transition={{ duration: 0.8, ease: 'easeOut' }}
+                  onAnimationComplete={() => setCoreHit(c => (c && c.key === coreHit.key ? null : c))}
+                  style={{ background: 'radial-gradient(ellipse at center, transparent 62%, rgba(239,68,68,0.45) 100%)', boxShadow: 'inset 0 0 0 2px rgba(239,68,68,0.6)' }}
+                />
+              )}
+            </AnimatePresence>
+
+            {/* Wave start banner */}
+            <AnimatePresence>
+              {waveBanner && (() => {
+                const mod = waveBanner.modifier;
+                const accent = mod === WaveModifier.NONE ? '#ffb800' : MODIFIER_HEX[mod];
+                return (
+                  <motion.div
+                    key={waveBanner.key}
+                    className="absolute left-0 right-0 bottom-[16%] flex justify-center pointer-events-none z-40"
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    transition={{ duration: 0.35, ease: 'easeOut' }}
+                  >
+                    <div
+                      className="px-10 py-3 flex flex-col items-center bg-[#0d1117]/75 backdrop-blur-sm border-y"
+                      style={{ borderColor: `${accent}66`, boxShadow: `0 0 40px ${accent}22` }}
+                    >
+                      <span className="text-[10px] font-mono uppercase tracking-[0.5em]" style={{ color: `${accent}cc` }}>
+                        Incoming · {waveBanner.count} {waveBanner.count === 1 ? 'hostile' : 'hostiles'}
+                      </span>
+                      <span className="text-4xl font-black italic tracking-tighter text-white leading-tight">
+                        WAVE {waveBanner.wave}
+                      </span>
+                      {mod !== WaveModifier.NONE && (
+                        <span className="text-xs font-black font-mono uppercase tracking-[0.3em]" style={{ color: accent }}>
+                          {MODIFIER_STYLE[mod].label} · {MODIFIER_STYLE[mod].desc}
+                        </span>
+                      )}
+                      {waveBanner.boss && (
+                        <span className="mt-1 text-[11px] font-black font-mono uppercase tracking-[0.3em] text-accent-red animate-pulse">
+                          ⚠ Dreadnought inbound
+                        </span>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })()}
+            </AnimatePresence>
 
             {/* Placement Indicator Overlay */}
             {placingType && (
