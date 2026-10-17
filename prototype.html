@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tactical Defense: Vector — 3D prototype</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #05080e; overflow: hidden; font-family: ui-monospace, monospace; }
+      #stage { position: fixed; inset: 0; }
+      #hud { position: fixed; top: 12px; left: 14px; color: #8fb4c9; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; pointer-events: none; }
+      #hud b { color: #00e5ff; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="hud"><b>3D prototype</b> · WebGL · PBR · shadows · AO · bloom · <span id="fps"></span></div>
+    <script type="module" src="/src/proto/main.ts"></script>
+  </body>
+</html>

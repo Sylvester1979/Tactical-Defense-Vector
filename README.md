@@ -42,6 +42,19 @@ npm run lint     # type-check
 | `T` | Cycle targeting priority |
 | `Esc` | Cancel / deselect |
 
+## 3D rendering prototype
+
+`prototype.html` is a standalone WebGL (Three.js) rendering of the same battlefield — PBR
+materials, real-time shadows, ambient occlusion, HDR bloom and a night-time reflection
+environment — used to evaluate moving the game to a 3D renderer. It is not playable.
+
+```bash
+npm run dev      # then open http://localhost:3000/prototype.html
+                 # close-up: /prototype.html?zoom=3&x=-6&z=-10
+```
+
+Code lives in `src/proto/`; the game itself does not load Three.js.
+
 ## Project layout
 
 - `src/hooks/useGame.ts` — simulation loop (spawning, movement, projectiles, economy)
