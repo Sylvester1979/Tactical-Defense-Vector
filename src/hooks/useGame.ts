@@ -28,12 +28,17 @@ import {
   getWaveBonus,
   WaveConfig
 } from '../constants';
+import { loadRun, saveRun, clearRun, loadBest, saveBest, hydrateTowers } from '../lib/storage';
 
 export function useGame() {
+  // Resume the last run (saved between waves) if there is one
+  const [initialRun] = useState(loadRun);
+  const restoredFromSave = !!initialRun && (initialRun.waveNumber > 0 || initialRun.towers.length > 0);
+
   const [gameState, setGameState] = useState<GameState>({
-    money: INITIAL_MONEY,
-    lives: INITIAL_LIVES,
-    waveNumber: 0,
+    money: initialRun?.money ?? INITIAL_MONEY,
+    lives: initialRun?.lives ?? INITIAL_LIVES,
+    waveNumber: initialRun?.waveNumber ?? 0,
     isPaused: true,
     isGameOver: false,
     isWaveReady: true,
@@ -41,10 +46,15 @@ export function useGame() {
     relocatingTowerId: null,
     shakeTime: 0,
     currentWaveModifier: WaveModifier.NONE,
-    gameSpeed: 1,
+    gameSpeed: initialRun?.gameSpeed ?? 1,
   });
 
-  const [towers, setTowers] = useState<TowerInstance[]>([]);
+  const [towers, setTowers] = useState<TowerInstance[]>(() => initialRun ? hydrateTowers(initialRun.towers) : []);
+
+  // Best run = most waves cleared; newRecord flags that this run beat the best it started against
+  const [bestWaves, setBestWaves] = useState(() => loadBest()?.waves ?? 0);
+  const [newRecord, setNewRecord] = useState(false);
+  const runStartBestRef = useRef(bestWaves);
   const [enemies, setEnemies] = useState<EnemyInstance[]>([]);
   const [projectiles, setProjectiles] = useState<Projectile[]>([]);
   const [particles, setParticles] = useState<Particle[]>([]);
@@ -648,7 +658,41 @@ export function useGame() {
     setTowers(prev => prev.map(t => t.id === id ? { ...t, targetingMode: mode } : t));
   }, []);
 
+  // --- PERSISTENCE ---
+  // Autosave only between waves: the field is empty then, so the run is fully described
+  // by economy + towers. Mid-wave reloads resume from the start of that wave.
+  const towerSignature = towers
+    .map(t => `${t.id}:${t.type}:${t.level}:${t.x}:${t.y}:${t.targetingMode}:${t.invested}`)
+    .join('|');
+  useEffect(() => {
+    const { isWaveReady, isGameOver, waveNumber, money, lives, gameSpeed } = gameState;
+    if (!isWaveReady || isGameOver) return;
+    if (waveNumber === 0 && towersRef.current.length === 0) return; // nothing worth saving yet
+    saveRun({
+      money, lives, waveNumber, gameSpeed,
+      towers: towersRef.current.map(({ id, type, baseType, x, y, level, targetingMode, invested }) =>
+        ({ id, type, baseType, x, y, level, targetingMode, invested })),
+    });
+  }, [gameState.isWaveReady, gameState.isGameOver, gameState.waveNumber, gameState.money, gameState.lives, gameState.gameSpeed, towerSignature]);
+
+  // A lost run can't be resumed
+  useEffect(() => {
+    if (gameState.isGameOver) clearRun();
+  }, [gameState.isGameOver]);
+
+  useEffect(() => {
+    const cleared = gameState.isWaveReady ? gameState.waveNumber : gameState.waveNumber - 1;
+    if (cleared > bestWaves) {
+      setBestWaves(cleared);
+      saveBest(cleared);
+    }
+    if (cleared > runStartBestRef.current) setNewRecord(true);
+  }, [gameState.isWaveReady, gameState.waveNumber, bestWaves]);
+
   const restart = () => {
+    clearRun();
+    runStartBestRef.current = bestWaves;
+    setNewRecord(false);
     setGameState({
       money: INITIAL_MONEY,
       lives: INITIAL_LIVES,
@@ -691,6 +735,9 @@ export function useGame() {
     setTowerTargetingMode,
     waveActive,
     createFloatingText,
+    bestWaves,
+    newRecord,
+    restoredFromSave,
     restart
   };
 }

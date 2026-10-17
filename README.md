@@ -24,6 +24,8 @@ npm run lint     # type-check
   many lives each one costs if it reaches the core.
 - **Wave modifiers**: RUSH (faster), SWARM (more, weaker), ELITE (fewer, tougher, richer).
 - Selling refunds 60% of everything invested in a tower; relocating costs a flat fee.
+- Progress autosaves between waves and resumes on reload (Restart starts over; losing
+  clears the save). Your best run — most waves cleared — is tracked in the HUD.
 
 ### Controls
 

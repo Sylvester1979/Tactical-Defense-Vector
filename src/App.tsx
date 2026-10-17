@@ -34,6 +34,9 @@ export default function App() {
     confirmRelocation,
     setTowerTargetingMode,
     createFloatingText,
+    bestWaves,
+    newRecord,
+    restoredFromSave,
     restart
   } = useGame();
 
@@ -176,6 +179,9 @@ export default function App() {
         onPauseToggle={() => setGameState(s => ({ ...s, isPaused: !s.isPaused }))}
         onRestart={restart}
         onCycleSpeed={cycleSpeed}
+        bestWaves={bestWaves}
+        newRecord={newRecord}
+        restoredFromSave={restoredFromSave}
         onPlaceTower={placeTower}
         onUpgradeTower={upgradeTower}
         onSpecializeTower={specializeTower}
