@@ -9,7 +9,8 @@ import {
   WaveModifier,
   Point,
   Particle,
-  FloatingText
+  FloatingText,
+  DamageType
 } from '../types';
 import { 
   CANVAS_WIDTH, 
@@ -327,10 +328,12 @@ export function useGame() {
           if (enemiesToSpawnRef.current > 0 && currentWaveRef.current) {
             spawnTimerRef.current += dt;
             const wave = currentWaveRef.current;
-            if (spawnTimerRef.current >= wave.interval) {
-              spawnTimerRef.current = 0;
+            // Carry the leftover time over (and spawn more than one per step if needed)
+            // so dense waves keep their scripted spawn rate instead of drifting slower
+            while (enemiesToSpawnRef.current > 0 && spawnTimerRef.current >= wave.interval) {
+              spawnTimerRef.current -= wave.interval;
               enemiesToSpawnRef.current--;
-            
+
               const randomType = wave.enemyTypes[Math.floor(Math.random() * wave.enemyTypes.length)];
               const baseHealth = getEnemyHealth(randomType, currentGameState.waveNumber || 1, wave.healthMult);
               currentEnemies.push({
@@ -368,7 +371,7 @@ export function useGame() {
             let currentHealth = enemy.health;
             let newBurnDuration = Math.max(0, enemy.burnDuration - dt);
             if (newBurnDuration > 0) {
-              currentHealth -= enemy.burnDamagePerSec * dt;
+              currentHealth -= enemy.burnDamagePerSec * (enemyType.resistances?.[DamageType.FIRE] ?? 1) * dt;
             }
 
             const waveSpeedMult = enemy.speedMultiplier ?? 1;
@@ -384,8 +387,9 @@ export function useGame() {
               burnDuration: newBurnDuration
             };
           }).filter(enemy => {
-             if (enemy.distanceTraveled >= pathLength) {
-               livesLost++;
+             // An enemy that burned to death on the exit tile counts as a kill, not a leak
+             if (enemy.distanceTraveled >= pathLength && enemy.health > 0) {
+               livesLost += ENEMY_TYPES[enemy.type].leakDamage ?? 1;
                newShake = 0.3;
                return false;
              }
@@ -686,6 +690,7 @@ export function useGame() {
     confirmRelocation,
     setTowerTargetingMode,
     waveActive,
+    createFloatingText,
     restart
   };
 }

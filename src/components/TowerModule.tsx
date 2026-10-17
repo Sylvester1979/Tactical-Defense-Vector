@@ -297,7 +297,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
 
                     <button
                       onClick={() => onSell(tower.id)}
-                      title={`Sell (+$${sellValue}) (S)`}
+                      title={`Sell (+$${sellValue}) (S ×2)`}
                       className="flex-1 py-2 px-3 flex items-center justify-center rounded-lg bg-white/5 hover:bg-accent-red/20 border border-white/5 hover:border-accent-red/40 text-white/40 hover:text-accent-red transition-all active:scale-95 group"
                     >
                       <Unplug className="w-3 h-3 group-hover:animate-pulse" />

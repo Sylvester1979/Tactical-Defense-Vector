@@ -3,7 +3,7 @@ import { GameCanvas } from './components/GameCanvas';
 import { UIOverlay } from './components/UIOverlay';
 import { useGame } from './hooks/useGame';
 import { TowerType, TargetingMode } from './types';
-import { TOWER_STATS, GAME_SPEEDS } from './constants';
+import { TOWER_STATS, GAME_SPEEDS, getSellValue } from './constants';
 import { toIso } from './lib/iso';
 
 // Helper for 2.5D hit detection: distance from point to vertical segment
@@ -33,6 +33,7 @@ export default function App() {
     cancelRelocation,
     confirmRelocation,
     setTowerTargetingMode,
+    createFloatingText,
     restart
   } = useGame();
 
@@ -46,6 +47,9 @@ export default function App() {
   // Keyboard shortcuts. The handler is refreshed every render so it always sees
   // current state, while the window listener itself is registered only once.
   const keyHandlerRef = React.useRef<(e: KeyboardEvent) => void>(() => {});
+  // Selling by keyboard needs a second S press within this window, so a stray key can't sell
+  const SELL_CONFIRM_MS = 2000;
+  const sellArmedRef = React.useRef<{ id: string; until: number } | null>(null);
   keyHandlerRef.current = (e: KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
@@ -94,9 +98,17 @@ export default function App() {
       case 'u':
         upgradeTower(selected.id);
         return;
-      case 's':
-        sellTower(selected.id);
+      case 's': {
+        const armed = sellArmedRef.current;
+        if (armed && armed.id === selected.id && performance.now() < armed.until) {
+          sellArmedRef.current = null;
+          sellTower(selected.id);
+        } else {
+          sellArmedRef.current = { id: selected.id, until: performance.now() + SELL_CONFIRM_MS };
+          createFloatingText(selected.x, selected.y - 30, `S again: sell +$${getSellValue(selected)}`, '#ffb800');
+        }
         return;
+      }
       case 'r':
         startRelocation(selected.id);
         return;
