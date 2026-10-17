@@ -3,7 +3,7 @@ import { PATH, TOWER_STATS } from '../constants';
 import { TowerType } from '../types';
 import { createStage } from './stage';
 import { buildWorld } from './world';
-import { buildTower, TowerModel } from './towers';
+import { buildTower, loadTowerModels, TowerModel } from './towers';
 import { buildEnemy, EnemyModel } from './enemies';
 import { createFx } from './fx';
 import { toWorld, ROAD_H } from './coords';
@@ -34,7 +34,9 @@ const along = (d: number) => {
 
 // ── Towers (game coordinates, same spots a player might pick) ──
 interface Tower { model: TowerModel; type: TowerType; range: number; cooldown: number; rate: number; kick: number }
-const towers: Tower[] = ([
+const towers: Tower[] = [];
+loadTowerModels().catch(err => console.error('model load failed, using procedural towers', err)).then(() => {
+  towers.push(...([
   [TowerType.BASIC, 300, 200], [TowerType.SNIPER, 560, 200], [TowerType.SPLASH, 330, 400],
   [TowerType.BASIC, 580, 400], [TowerType.SNIPER, 780, 300], [TowerType.SPLASH, 160, 420],
 ] as const).map(([type, x, y]) => {
@@ -44,6 +46,7 @@ const towers: Tower[] = ([
   stage.scene.add(model.root);
   const s = TOWER_STATS[type];
   return { model, type, range: (s.range * 1.4) / 10, cooldown: Math.random(), rate: s.fireRate * 1.4, kick: 0 };
+}));
 });
 
 // ── Enemies looping along the road ──

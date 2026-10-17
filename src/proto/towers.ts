@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { TowerType } from '../types';
 import { TOWER_STATS } from '../constants';
 import { makeHullDetail } from './textures';
@@ -189,10 +190,54 @@ const buildMortar = (color: string): TowerModel => {
   return { root: shadowed(root), yaw, pitch, muzzles: [muzzle], band, family: 'mortar', recoil };
 };
 
+// ── Authored models (built in Blender by tools/models/build_*.py) ──────────
+const templates: Partial<Record<TowerModel['family'], THREE.Group>> = {};
+
+export const loadTowerModels = async () => {
+  // ?vulcan=procedural keeps the primitive-built Vulcan for comparison
+  if (new URLSearchParams(location.search).get('vulcan') === 'procedural') return;
+  const gltf = await new GLTFLoader().loadAsync('/models/vulcan.glb');
+  templates.vulcan = gltf.scene;
+};
+
+const instantiate = (family: TowerModel['family'], color: string): TowerModel | null => {
+  const template = templates[family];
+  if (!template) return null;
+  const root = template.clone(true);
+  const node = (name: string) => {
+    const n = root.getObjectByName(name);
+    if (!n) throw new Error(`model "${family}" is missing node ${name}`);
+    return n as THREE.Group;
+  };
+  // Each tower pulses its own energy band, so it needs its own copy of the glow material
+  let band: THREE.MeshStandardMaterial | null = null;
+  root.traverse(o => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.castShadow = mesh.receiveShadow = true;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const swapped = mats.map(m => {
+      if (m.name !== 'Glow') return m;
+      band ??= (m as THREE.MeshStandardMaterial).clone();
+      return band;
+    });
+    mesh.material = Array.isArray(mesh.material) ? swapped : swapped[0];
+  });
+  const pool = new THREE.PointLight(color, 40, 15, 2);
+  pool.position.set(0, 6.2, 0);
+  root.add(pool);
+  const group = new THREE.Group();
+  group.add(root);
+  return {
+    root: group, yaw: node('Yaw'), pitch: node('Pitch'), recoil: node('Recoil'), spin: node('Spin'),
+    muzzles: [node('Muzzle')], band: band ?? glow(color, 3), family,
+  };
+};
+
 export const buildTower = (type: TowerType): TowerModel => {
   const color = TOWER_STATS[type].color;
   const base = TOWER_STATS[type].type;
   if (base === TowerType.SNIPER || type === TowerType.RAILGUN_HYPER || type === TowerType.RAILGUN_PIERCER) return buildRailgun(color);
   if (base === TowerType.SPLASH || type === TowerType.MORTAR_CRYO || type === TowerType.MORTAR_BOMBER) return buildMortar(color);
-  return buildVulcan(color);
+  return instantiate('vulcan', color) ?? buildVulcan(color);
 };

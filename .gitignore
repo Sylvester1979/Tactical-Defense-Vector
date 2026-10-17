@@ -4,3 +4,9 @@ dist/
 .DS_Store
 .env
 .env.local
+
+# Blender module venv and model build output
+.blender-venv/
+out/
+renders/
+*.blend1
