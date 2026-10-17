@@ -2,7 +2,8 @@ import { CANVAS_WIDTH } from "../constants";
 
 export const ISO_SCALE = 0.6;
 export const OFFSET_X = CANVAS_WIDTH / 2;
-export const OFFSET_Y = 80;
+// Shifted down so the road sits in the middle of the frame and the whole platform fits
+export const OFFSET_Y = 180;
 
 /**
  * Converts game coordinates (x, y, z) to screen coordinates.

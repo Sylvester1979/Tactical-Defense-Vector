@@ -1,9 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { TowerInstance, EnemyInstance, Projectile, Particle, FloatingText, Point, TowerType } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, PATH, TOWER_STATS, ENEMY_TYPES } from '../constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, PATH, TOWER_STATS, ENEMY_TYPES, getFireInterval } from '../constants';
 
 import { toIso, fromIso, ISO_SCALE } from '../lib/iso';
-import { checkPlacement } from '../lib/placement';
+import { checkPlacement, isNearPath } from '../lib/placement';
+import {
+  drawBackdropStatic, drawPlatformStatic, drawGroundDetailStatic, drawPylonsStatic,
+  drawPylonLights, drawEntryGate, drawCoreReactor, coreColor,
+} from './environment';
 
 // Helper for hover detection
 const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
@@ -468,6 +472,7 @@ interface GameCanvasProps {
   relocatingTowerId: string | null;
   placingType: TowerType | null;
   shakeTime: number;
+  coreIntegrity: number; // lives / starting lives, 0..1
   onCanvasClick: (x: number, y: number, sx: number, sy: number) => void;
 }
 
@@ -481,6 +486,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   relocatingTowerId,
   placingType,
   shakeTime,
+  coreIntegrity,
   onCanvasClick,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -617,58 +623,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       if (cctx) {
         // Draw Static Environment once into the cache
 
-        // 1. Clear & Background
-        const grad = cctx.createRadialGradient(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 0, CANVAS_WIDTH/2, CANVAS_HEIGHT/2, CANVAS_WIDTH);
-        grad.addColorStop(0, '#0d1117');
-        grad.addColorStop(1, '#010409');
-        cctx.fillStyle = grad;
-        cctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-        // 2. Foundation Platform
-        const baseH = 45;
-        const margin = 40;
-        const cornerPts = [
-          {x: -margin, y: -margin},
-          {x: CANVAS_WIDTH + margin, y: -margin},
-          {x: CANVAS_WIDTH + margin, y: CANVAS_HEIGHT + margin},
-          {x: -margin, y: CANVAS_HEIGHT + margin}
-        ];
-        
-        const b_iso = cornerPts.map(p => toIso(p.x, p.y, -baseH));
-        const t_iso = cornerPts.map(p => toIso(p.x, p.y, 0));
-
-        // Side Walls
-        cctx.fillStyle = '#010409';
-        cctx.beginPath();
-        cctx.moveTo(b_iso[0].x, b_iso[0].y); cctx.lineTo(b_iso[1].x, b_iso[1].y);
-        cctx.lineTo(t_iso[1].x, t_iso[1].y); cctx.lineTo(t_iso[0].x, t_iso[0].y);
-        cctx.closePath(); cctx.fill();
-
-        // South Wall (Graded)
-        const sGrad = cctx.createLinearGradient(b_iso[1].x, b_iso[1].y, b_iso[2].x, b_iso[2].y);
-        sGrad.addColorStop(0, '#0d1117');
-        sGrad.addColorStop(1, '#050608');
-        cctx.fillStyle = sGrad;
-        cctx.beginPath();
-        cctx.moveTo(b_iso[1].x, b_iso[1].y); cctx.lineTo(b_iso[2].x, b_iso[2].y);
-        cctx.lineTo(t_iso[2].x, t_iso[2].y); cctx.lineTo(t_iso[1].x, t_iso[1].y);
-        cctx.closePath(); cctx.fill(); 
-
-        // East Face
-        cctx.fillStyle = '#050608';
-        cctx.beginPath();
-        cctx.moveTo(b_iso[2].x, b_iso[2].y); cctx.lineTo(b_iso[3].x, b_iso[3].y);
-        cctx.lineTo(t_iso[3].x, t_iso[3].y); cctx.lineTo(t_iso[2].x, t_iso[2].y);
-        cctx.closePath(); cctx.fill();
-
-        // Top Surface
-        const tGrad = cctx.createRadialGradient(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 50, CANVAS_WIDTH/2, CANVAS_HEIGHT/2, CANVAS_WIDTH);
-        tGrad.addColorStop(0, '#1c2128');
-        tGrad.addColorStop(1, '#0d1117');
-        cctx.fillStyle = tGrad;
-        cctx.beginPath();
-        cctx.moveTo(t_iso[0].x, t_iso[0].y); t_iso.forEach(p => cctx.lineTo(p.x, p.y));
-        cctx.closePath(); cctx.fill();
+        // 1. Backdrop, platform body and floor detail
+        drawBackdropStatic(cctx);
+        drawPlatformStatic(cctx);
+        drawGroundDetailStatic(cctx, isNearPath);
 
         // 3. Fine isometric grid with node marks
         cctx.strokeStyle = 'rgba(0, 242, 255, 0.032)';
@@ -704,6 +662,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           cctx.fill();
         });
 
+        // Comm pylons on the platform rim (outside the buildable field)
+        drawPylonsStatic(cctx);
       }
     }
 
@@ -992,11 +952,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.fillStyle = 'rgba(0,242,255,0.25)';
       ctx.fill();
       ctx.shadowBlur = 0;
+      ctx.restore();
+      drawEntryGate(ctx, Date.now(), roadHeight);
+      const entryLabel = toIso(PATH[0].x, PATH[0].y, 72);
       ctx.fillStyle = '#00f2ff';
       ctx.font = 'bold 8px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('ENTRY', entryPt.x, entryPt.y - 16);
-      ctx.restore();
+      ctx.fillText('ENTRY', entryLabel.x, entryLabel.y);
     }
 
     // --- CORE TARGET (PATH[last]) ---
@@ -1004,16 +966,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       const last = PATH[PATH.length - 1];
       const corePt = toIso(last.x, last.y, roadHeight + 2);
       const pulse = 0.5 + Math.sin(Date.now() / 380) * 0.5;
+      const coreCol = coreColor(coreIntegrity);
       ctx.save();
       ctx.globalAlpha = 0.5 + pulse * 0.45;
-      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
-      ctx.shadowBlur = 12 + pulse * 12; ctx.shadowColor = '#ef4444';
+      ctx.strokeStyle = coreCol; ctx.lineWidth = 2;
+      ctx.shadowBlur = 12 + pulse * 12; ctx.shadowColor = coreCol;
       // Outer ring
       ctx.beginPath();
       ctx.ellipse(corePt.x, corePt.y, 14, 7, 0, 0, Math.PI * 2);
       ctx.stroke();
       // Inner dot
-      ctx.fillStyle = '#ef4444';
+      ctx.fillStyle = coreCol;
       ctx.beginPath();
       ctx.ellipse(corePt.x, corePt.y, 4, 2, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -1028,12 +991,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.lineTo(corePt.x + Math.cos(ang) * 22, corePt.y + Math.sin(ang) * 22);
         ctx.stroke();
       });
-      ctx.fillStyle = '#ef4444';
+      ctx.restore();
+      const reactor = drawCoreReactor(ctx, Date.now(), roadHeight, coreIntegrity);
+      ctx.fillStyle = reactor.color;
       ctx.font = 'bold 8px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('CORE', corePt.x, corePt.y - 20);
-      ctx.restore();
+      ctx.fillText('CORE', reactor.top.x, reactor.top.y - 14);
     }
+
+    // Blinking beacons on the rim pylons
+    drawPylonLights(ctx, Date.now(), (x, y, r, c, b) => drawGlowDot(ctx, x, y, r, c, b));
 
     // Building Grid — only visible during placement or relocation
     if (placingType !== null || relocatingTowerId !== null) {
@@ -1328,7 +1295,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const timeSinceFired = tower.lastFired;
         const isHovered = tower.id === hoveredTowerId;
         const isSelected = tower.id === selectedTowerId;
-        const rechargeProgress = Math.min(1, timeSinceFired / (1 / stats.fireRate));
+        const rechargeProgress = Math.min(1, timeSinceFired / getFireInterval(tower.type, tower.level));
         const pulseIntensity = Math.pow(1 - rechargeProgress, 2);
         const isSniper = tower.baseType === TowerType.SNIPER;
         const isSplash = tower.baseType === TowerType.SPLASH;
@@ -1896,7 +1863,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     ctx.restore();
 
-  }, [towers, enemies, projectiles, particles, floatingTexts, selectedTowerId, hoveredTowerId, relocatingTowerId, placingType, mousePos, shakeTime]);
+  }, [towers, enemies, projectiles, particles, floatingTexts, selectedTowerId, hoveredTowerId, relocatingTowerId, placingType, mousePos, shakeTime, coreIntegrity]);
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
