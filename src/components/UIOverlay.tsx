@@ -10,8 +10,6 @@ import {
   CreditCard,
   Layers,
   Activity,
-  ArrowUp,
-  XCircle,
   Terminal,
   Cpu,
   MoveVertical,
@@ -35,7 +33,6 @@ interface UIOverlayProps {
   onCycleSpeed: () => void;
   muted: boolean;
   onToggleMute: () => void;
-  onPlaceTower: (type: TowerType) => void;
   onUpgradeTower: (id: string) => void;
   onSpecializeTower: (id: string, type: TowerType) => void;
   onSellTower: (id: string) => void;
@@ -130,9 +127,6 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
     return () => ro.disconnect();
   }, []);
 
-  const buildDate = new Date(__BUILD_TIME__);
-  const buildLabel = buildDate.toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    + ' ' + buildDate.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' });
 
   // --- Live log feed ---
   const [logEntries, setLogEntries] = React.useState<{id: number; time: string; text: string; color: string}[]>([

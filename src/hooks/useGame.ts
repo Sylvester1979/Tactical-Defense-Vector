@@ -20,7 +20,6 @@ import {
   PATH, 
   TOWER_STATS, 
   ENEMY_TYPES, 
-  WAVES,
   RELOCATION_FEE,
   getSellValue,
   getWaveConfig,
