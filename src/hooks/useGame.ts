@@ -31,6 +31,17 @@ import {
 import { loadRun, saveRun, clearRun, loadBest, saveBest, hydrateTowers } from '../lib/storage';
 import { checkPlacement } from '../lib/placement';
 
+// Mortar shell apex: proportional to throw distance, clamped
+const MORTAR_ARC_PER_DIST = 0.45;
+const MORTAR_ARC_MIN = 40;
+const MORTAR_ARC_MAX = 90;
+
+// Fraction of the flight covered, given the distance still left to the target
+const flightProgress = (p: Projectile, remaining: number) => {
+  const total = Math.hypot(p.targetX - p.startX, p.targetY - p.startY);
+  return total > 0 ? Math.min(1, Math.max(0, 1 - remaining / total)) : 1;
+};
+
 // Reward labels merge when a new one spawns this close to one still young enough
 const MONEY_MERGE_RADIUS = 60;
 const MONEY_MERGE_MIN_LIFE = 0.4;
@@ -393,6 +404,11 @@ export function useGame() {
              return true;
           });
 
+          if (livesLost > 0) {
+            const core = PATH[PATH.length - 1];
+            createFloatingText(core.x, core.y, `−${livesLost}`, '#ff4d4d');
+          }
+
           // 3. Projectiles (Collision & Movement)
           const nextProjs: Projectile[] = [];
           currentProjectiles.forEach(p => {
@@ -404,7 +420,8 @@ export function useGame() {
             let collisionEnemy: EnemyInstance | null = null;
             let targetsHit: EnemyInstance[] = [];
 
-            for (const enemy of currentEnemies) {
+            // Lobbed shells fly over everything and only detonate where they land
+            for (const enemy of (p.arcHeight ? [] : currentEnemies)) {
               if (p.hitEnemyIds?.includes(enemy.id)) continue;
             
               const d = getDistance(p, enemy);
@@ -472,17 +489,22 @@ export function useGame() {
                   ...p,
                   x: p.x + dx * (moveStep / distToDest),
                   y: p.y + dy * (moveStep / distToDest),
-                  progress: p.progress + (moveStep / distToDest)
+                  progress: flightProgress(p, distToDest - moveStep)
                 });
               }
             } else {
               const ratio = moveStep / distToDest;
+              const progress = flightProgress(p, distToDest - moveStep);
+              // Straight shots ease toward targetZ; lobbed shells follow a parabola over the line
+              const z = p.arcHeight
+                ? p.startZ + (p.targetZ - p.startZ) * progress + p.arcHeight * 4 * progress * (1 - progress)
+                : p.z + (p.targetZ - p.z) * ratio;
               nextProjs.push({
                 ...p,
                 x: p.x + (p.targetX - p.x) * ratio,
                 y: p.y + (p.targetY - p.y) * ratio,
-                z: p.z + (p.targetZ - p.z) * ratio,
-                progress: p.progress + ratio
+                z,
+                progress,
               });
             }
           });
@@ -546,11 +568,19 @@ export function useGame() {
                 destY = startY + ((predPos.y - startY) / aimDist) * range;
               }
 
+              const startZ = 40 + tower.level * 2;
+              const isLobbed = tower.baseType === TowerType.SPLASH;
               currentProjectiles.push({
                 id: `pr-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
                 x: startX,
                 y: startY,
-                z: 40 + tower.level * 2,
+                z: startZ,
+                startX,
+                startY,
+                startZ,
+                arcHeight: isLobbed
+                  ? Math.min(MORTAR_ARC_MAX, Math.max(MORTAR_ARC_MIN, Math.hypot(destX - startX, destY - startY) * MORTAR_ARC_PER_DIST))
+                  : undefined,
                 targetX: destX,
                 targetY: destY,
                 targetZ: 15,
