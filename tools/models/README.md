@@ -23,6 +23,18 @@ python3.13 -m venv .blender-venv          # bpy 5.2 needs Python 3.13
 cp out/vulcan.glb public/models/
 ```
 
+Building also **weathers and bakes** the model (`bake.py`): worn edges, grime in crevices, streaks,
+dust on top surfaces and ambient occlusion are baked by Cycles into a colour map and an ORM map
+(R = occlusion, G = roughness, B = metallic) per mesh, exported as WebP inside the glb. Emissive
+materials stay untextured so the game can recolour them. This takes a few minutes per model:
+
+- `--no-bake` skips it (fast iteration on shapes; the glb gets plain materials),
+- `--bake-preview` bakes small and noisy in about a minute (to judge the weathering).
+
+```bash
+.blender-venv/bin/python tools/models/build_vulcan.py out/ --bake-preview
+```
+
 ## Render it for review
 
 ```bash
@@ -40,4 +52,5 @@ Arguments: output folder, number of angles around the model (default 8), Cycles 
 - Moving parts are Empties the game looks up by name: `Yaw` (turns to target),
   `Pitch` (tilts the guns), `Recoil` (slides back on fire), `Spin` (rotary barrels),
   `Muzzle` (where shots start).
-- The material named `Glow` is the tower's energy band; the game pulses it per tower.
+- The material named `Glow` is the tower's energy band; the game recolours and pulses it per tower.
+- Enemies: `+X` forward; `Rotor_*` empties spin; emissive materials are named `Enemy*`.

@@ -19,6 +19,7 @@ import bmesh  # noqa: E402  (bmesh is only importable once bpy is loaded)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (reset_scene, material, empty, box, cylinder, sphere, cut, join,  # noqa: E402
                     setup_render_stage, _finish)
+from bake import bake_model, EXPORT_IMAGES  # noqa: E402
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:]
 OUT = os.path.abspath(argv[0] if argv else '.')
@@ -238,12 +239,15 @@ turret_body = join('TurretBody', tur, parent=turret_e)
 # A slightly oversized turret keeps the silhouette readable at the game's zoom
 turret_body.data.transform(Matrix.Scale(1.12, 4))
 
+# ── Weather and bake textures (skip with --no-bake) ───────────────────────
+bake_model(root)
+
 # ── Export the model, then add the render stage and save the .blend ────────
 bpy.ops.object.select_all(action='DESELECT')
 for o in [root] + list(root.children_recursive):
     o.select_set(True)
 bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'guardian.glb'), export_format='GLB', use_selection=True,
-                          export_yup=True, export_apply=True)
+                          export_yup=True, export_apply=True, **EXPORT_IMAGES)
 print('exported', os.path.join(OUT, 'guardian.glb'), os.path.getsize(os.path.join(OUT, 'guardian.glb')), 'bytes')
 
 setup_render_stage(target_height=1.1)
