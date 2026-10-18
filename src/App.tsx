@@ -3,9 +3,22 @@ import { GameCanvas } from './components/GameCanvas';
 import { UIOverlay } from './components/UIOverlay';
 import { useGame } from './hooks/useGame';
 import { TowerType, TargetingMode } from './types';
-import { TOWER_STATS, GAME_SPEEDS, getSellValue, INITIAL_LIVES } from './constants';
+import { TOWER_STATS, GAME_SPEEDS, getSellValue, INITIAL_LIVES, CANVAS_WIDTH, CANVAS_HEIGHT } from './constants';
 import { toIso } from './lib/iso';
 import { unlockAudio, isMuted, setMuted } from './lib/audio';
+
+// The battlefield renders in WebGL (3D models, lighting, post-processing). ?renderer=2d, or a
+// browser without WebGL2, falls back to the original Canvas 2D renderer. Three.js is code-split
+// so the 2D path never downloads it.
+const GameView3D = React.lazy(() => import('./components/GameView3D').then(m => ({ default: m.GameView3D })));
+const use3D = (() => {
+  if (new URLSearchParams(location.search).get('renderer') === '2d') return false;
+  try {
+    return !!document.createElement('canvas').getContext('webgl2');
+  } catch {
+    return false;
+  }
+})();
 
 // Helper for 2.5D hit detection: distance from point to vertical segment
 const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
@@ -186,6 +199,20 @@ export default function App() {
     setGameState(s => ({ ...s, selectedTowerId: null }));
   };
 
+  const canvasProps = {
+    towers,
+    enemies,
+    projectiles,
+    particles,
+    floatingTexts,
+    selectedTowerId: gameState.selectedTowerId,
+    relocatingTowerId: gameState.relocatingTowerId,
+    placingType,
+    shakeTime: gameState.shakeTime,
+    coreIntegrity: gameState.lives / INITIAL_LIVES,
+    onCanvasClick: handleCanvasClick,
+  };
+
   return (
     <div className={`min-h-screen bg-dark-bg flex flex-col overflow-hidden font-sans relative ${gameState.shakeTime > 0 ? 'jitter-effect' : ''}`}>
       <div className="crt-overlay" />
@@ -212,20 +239,13 @@ export default function App() {
         onSetTargetingMode={setTowerTargetingMode}
         placingType={placingType}
         setPlacingType={setPlacingType}
-        renderCanvas={
-          <GameCanvas 
-            towers={towers}
-            enemies={enemies}
-            projectiles={projectiles}
-            particles={particles}
-            floatingTexts={floatingTexts}
-            selectedTowerId={gameState.selectedTowerId}
-            relocatingTowerId={gameState.relocatingTowerId}
-            placingType={placingType}
-            shakeTime={gameState.shakeTime}
-            coreIntegrity={gameState.lives / INITIAL_LIVES}
-            onCanvasClick={handleCanvasClick}
-          />
+        renderCanvas={use3D ? (
+          <React.Suspense fallback={<div style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }} className="bg-dark-bg" />}>
+            <GameView3D {...canvasProps} />
+          </React.Suspense>
+        ) : (
+          <GameCanvas {...canvasProps} />
+        )
         }
       />
     </div>

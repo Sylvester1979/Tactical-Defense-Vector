@@ -462,7 +462,7 @@ const MUZZLE_X: Partial<Record<TowerType, number>> = {
   [TowerType.SPLASH]: 14, [TowerType.MORTAR_CRYO]: 14, [TowerType.MORTAR_BOMBER]: 15,
 };
 
-interface GameCanvasProps {
+export interface GameCanvasProps {
   towers: TowerInstance[];
   enemies: EnemyInstance[];
   projectiles: Projectile[];

@@ -1,18 +1,24 @@
 import * as THREE from 'three';
 import { PATH, TOWER_STATS } from '../constants';
 import { TowerType } from '../types';
-import { createStage } from './stage';
-import { buildWorld } from './world';
-import { buildTower, loadTowerModels, TowerModel } from './towers';
-import { buildEnemy, EnemyModel, loadEnemyModels } from './enemies';
-import { createFx } from './fx';
-import { toWorld, ROAD_H } from './coords';
+import { createStage } from '../render3d/stage';
+import { buildWorld } from '../render3d/world';
+import { buildTower, loadTowerModels, TowerModel } from '../render3d/towers';
+import { buildEnemy, EnemyModel, loadEnemyModels } from '../render3d/enemies';
+import { createFx } from '../render3d/fx';
+import { toWorld, ROAD_H } from '../render3d/coords';
 
 // 3D rendering prototype: same road, same tower/enemy roster, rendered with WebGL (PBR materials,
 // shadows, ambient occlusion, HDR bloom). Not playable — a looping skirmish to judge the look.
 
 const host = document.getElementById('stage')!;
-const stage = createStage(host);
+// ?zoom=2&x=-10&z=5 frames a close-up (useful for inspecting models)
+const params = new URLSearchParams(location.search);
+const stage = createStage(host, {
+  focus: new THREE.Vector3(Number(params.get('x') ?? 0), 0, Number(params.get('z') ?? 0)),
+  viewHeight: 92 / Number(params.get('zoom') ?? 1),
+});
+window.addEventListener('resize', () => stage.resize());
 const world = buildWorld(stage.scene);
 const fx = createFx(stage.scene);
 
