@@ -17,7 +17,9 @@ export interface Stage {
   camera: THREE.OrthographicCamera;
   composer: EffectComposer;
   keyLight: THREE.DirectionalLight;
-  resize: () => void;
+  resize: (pixelRatio?: number) => void;
+  setAmbientOcclusion: (on: boolean) => void;
+  dispose: () => void;
 }
 
 // Night-time reflection environment: a dark hangar with a cool overhead softbox and a few neon
@@ -39,16 +41,16 @@ const makeNightEnvironment = () => {
 };
 
 // Dimetric 2:1 isometric view (30° elevation, 45° azimuth) — same angle as the 2D game
-const CAM_DIR = new THREE.Vector3(Math.sin(Math.PI / 4) * Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), Math.cos(Math.PI / 4) * Math.cos(Math.PI / 6));
-// ?zoom=2&x=-10&z=5 frames a close-up (useful for inspecting models)
-const params = new URLSearchParams(location.search);
-const ZOOM = Number(params.get('zoom') ?? 1);
-const FOCUS = new THREE.Vector3(Number(params.get('x') ?? 0), 0, Number(params.get('z') ?? 0));
-const VIEW_HEIGHT = 92 / ZOOM; // world units visible vertically
+export const CAM_DIR = new THREE.Vector3(Math.sin(Math.PI / 4) * Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), Math.cos(Math.PI / 4) * Math.cos(Math.PI / 6));
 
-export const createStage = (host: HTMLElement): Stage => {
+export interface StageOptions {
+  focus: THREE.Vector3;  // ground point at the centre of the view
+  viewHeight: number;    // world units visible vertically
+  viewWidth?: number;    // fixed width in world units; default: follow the host's aspect ratio
+}
+
+export const createStage = (host: HTMLElement, { focus, viewHeight, viewWidth }: StageOptions): Stage => {
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.NoToneMapping; // tone mapping happens once, in OutputPass
@@ -65,8 +67,8 @@ export const createStage = (host: HTMLElement): Stage => {
   scene.environmentIntensity = 1.0;
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600);
-  camera.position.copy(CAM_DIR.clone().multiplyScalar(220).add(FOCUS));
-  camera.lookAt(FOCUS);
+  camera.position.copy(CAM_DIR.clone().multiplyScalar(220).add(focus));
+  camera.lookAt(focus);
 
   // Key: cool moonlight raking in from the back-left, casting the main shadows
   const keyLight = new THREE.DirectionalLight('#c3d2ff', 2.6);
@@ -88,7 +90,6 @@ export const createStage = (host: HTMLElement): Stage => {
   scene.add(rim);
 
   // Post: MSAA scene render → ambient occlusion → bloom (only HDR-bright emissives) → tone map
-  const size = new THREE.Vector2();
   const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   const composer = new EffectComposer(renderer, target);
   composer.addPass(new RenderPass(scene, camera));
@@ -96,6 +97,7 @@ export const createStage = (host: HTMLElement): Stage => {
   gtao.blendIntensity = 0.85;
   gtao.updateGtaoMaterial({ radius: 1.6, distanceExponent: 1.5, thickness: 2.5, scale: 1.2, samples: 16 });
   composer.addPass(gtao);
+  const setAmbientOcclusion = (on: boolean) => { gtao.enabled = on; };
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.85, 0.55, 1.0);
   composer.addPass(bloom);
   const output = new OutputPass();
@@ -104,18 +106,26 @@ export const createStage = (host: HTMLElement): Stage => {
   // OutputPass reads the renderer's tone mapping settings
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
-  const resize = () => {
+  // pixelRatio: device pixels per CSS pixel of the host (callers that CSS-scale the host pass it in)
+  const resize = (pixelRatio = Math.min(window.devicePixelRatio, 2)) => {
     const w = host.clientWidth, h = host.clientHeight;
+    renderer.setPixelRatio(pixelRatio);
+    composer.setPixelRatio(pixelRatio);
     renderer.setSize(w, h);
     composer.setSize(w, h);
-    renderer.getSize(size);
-    const aspect = w / h;
-    camera.left = -VIEW_HEIGHT * aspect / 2; camera.right = VIEW_HEIGHT * aspect / 2;
-    camera.top = VIEW_HEIGHT / 2; camera.bottom = -VIEW_HEIGHT / 2;
+    const width = viewWidth ?? viewHeight * (w / h);
+    camera.left = -width / 2; camera.right = width / 2;
+    camera.top = viewHeight / 2; camera.bottom = -viewHeight / 2;
     camera.updateProjectionMatrix();
   };
   resize();
-  window.addEventListener('resize', resize);
 
-  return { renderer, scene, camera, composer, keyLight, resize };
+  const dispose = () => {
+    composer.dispose();
+    target.dispose();
+    renderer.dispose();
+    renderer.domElement.remove();
+  };
+
+  return { renderer, scene, camera, composer, keyLight, resize, setAmbientOcclusion, dispose };
 };

@@ -145,8 +145,9 @@ export const buildWorld = (scene: THREE.Scene) => {
   cap.position.y = ROAD_H + 2.4 + 6.1;
   cap.castShadow = true;
   core.add(cap);
+  const ringMat = emissive('#00e5ff', 2.5);
   const coreRings = [0, 1].map(() => {
-    const r = new THREE.Mesh(new THREE.TorusGeometry(1.45, 0.08, 10, 48), emissive('#00e5ff', 2.5));
+    const r = new THREE.Mesh(new THREE.TorusGeometry(1.45, 0.08, 10, 48), ringMat);
     r.rotation.x = Math.PI / 2;
     core.add(r);
     return r;
@@ -195,8 +196,21 @@ export const buildWorld = (scene: THREE.Scene) => {
       }
     });
 
+  // Core integrity tints the reactor: cyan when healthy, through amber, to red; it flickers when critical
+  const healthy = new THREE.Color('#00e5ff'), warning = new THREE.Color('#ffb000'), critical = new THREE.Color('#ff2a2a');
+  const coreColor = new THREE.Color();
+  let integrity = 1;
+
   let t = 0;
   return {
+    setIntegrity(value: number) {
+      integrity = Math.max(0, Math.min(1, value));
+      if (integrity > 0.5) coreColor.copy(warning).lerp(healthy, (integrity - 0.5) / 0.5);
+      else coreColor.copy(critical).lerp(warning, integrity / 0.5);
+      coreColumnMat.emissive.copy(coreColor);
+      ringMat.emissive.copy(coreColor);
+      coreLight.color.copy(coreColor);
+    },
     update(dt: number) {
       t += dt;
       // Energy flowing along the road towards the core
@@ -207,9 +221,10 @@ export const buildWorld = (scene: THREE.Scene) => {
       scan.position.set(0, ROAD_H + 0.1 + s * 4.5, 0);
       (scan.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - s);
       // Reactor: breathing column, rings riding up and down
-      coreColumnMat.emissiveIntensity = 1.05 + Math.sin(t * 2.2) * 0.25;
+      const flicker = integrity < 0.3 && Math.sin(t * 23) * Math.sin(t * 7.3) > 0.55 ? 0.35 : 1;
+      coreColumnMat.emissiveIntensity = (1.05 + Math.sin(t * 2.2) * 0.25) * flicker;
       coreRings.forEach((r, k) => { r.position.y = ROAD_H + 3 + ((Math.sin(t * 1.4 + k * Math.PI) + 1) / 2) * 4.6; });
-      coreLight.intensity = 90 + Math.sin(t * 2.2) * 20;
+      coreLight.intensity = (90 + Math.sin(t * 2.2) * 20) * flicker;
       // Beacons blink out of phase
       beaconMats.forEach((m, k) => { m.emissiveIntensity = ((t + k * 0.37) % 1.6) < 0.25 ? 8 : 0.4; });
     },

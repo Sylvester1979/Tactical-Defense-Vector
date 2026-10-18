@@ -21,9 +21,9 @@ const shadowed = <T extends THREE.Object3D>(o: T) => {
   return o;
 };
 
-// Recon drone: lifting body, two ducted rotors, glowing sensor canopy
-const buildScout = (): EnemyModel => {
-  const color = ENEMY_TYPES.SCOUT.color;
+// Recon drone: lifting body, two ducted rotors, glowing sensor canopy. Also stands in (recoloured,
+// rescaled) for the other light flyers until their authored models load.
+const buildScout = (color = ENEMY_TYPES.SCOUT.color, scale = 1): EnemyModel => {
   const shell = new THREE.MeshStandardMaterial({ color: '#8d97a4', metalness: 0.55, roughness: 0.32, normalMap: hull.normalMap });
   const dark = new THREE.MeshStandardMaterial({ color: '#1a1f27', metalness: 0.8, roughness: 0.4 });
   const root = new THREE.Group();
@@ -60,6 +60,7 @@ const buildScout = (): EnemyModel => {
   thruster.rotation.y = -Math.PI / 2;
   thruster.position.x = -1.02;
   root.add(thruster);
+  root.scale.setScalar(scale);
   return {
     root: shadowed(root), hover: 3.2,
     animate: t => { rotors.forEach((r, k) => { r.rotation.y = t * 40 * (k ? -1 : 1); }); root.rotation.z = Math.sin(t * 3) * 0.06; },
@@ -152,18 +153,27 @@ const buildColossus = (): EnemyModel => {
 };
 
 // ── Authored models (built in Blender by tools/models/build_*.py) ──────────
-type EnemyKind = 'SCOUT' | 'GUARDIAN' | 'COLOSSUS';
+export type EnemyKind = 'SCOUT' | 'INTERCEPTOR' | 'GUARDIAN' | 'PHANTOM' | 'COLOSSUS';
+const KINDS: EnemyKind[] = ['SCOUT', 'INTERCEPTOR', 'GUARDIAN', 'PHANTOM', 'COLOSSUS'];
 const templates: Partial<Record<EnemyKind, THREE.Group>> = {};
-const HOVER: Record<EnemyKind, number> = { SCOUT: 3.2, GUARDIAN: 0, COLOSSUS: 0.4 };
+// Height of the model's origin above the road
+export const HOVER: Record<EnemyKind, number> = { SCOUT: 3.2, INTERCEPTOR: 2.4, GUARDIAN: 0, PHANTOM: 1.6, COLOSSUS: 0.4 };
 
 export const loadEnemyModels = async () => {
   if (!useAuthoredModels()) return;
   const loader = new GLTFLoader();
-  const kinds: EnemyKind[] = ['SCOUT', 'GUARDIAN', 'COLOSSUS'];
-  const results = await Promise.allSettled(kinds.map(k => loader.loadAsync(`/models/${k.toLowerCase()}.glb`)));
+  const results = await Promise.allSettled(KINDS.map(k => loader.loadAsync(`/models/${k.toLowerCase()}.glb`)));
   results.forEach((r, i) => {
-    if (r.status === 'fulfilled') templates[kinds[i]] = r.value.scene;
-    else console.warn(`enemy model ${kinds[i]} not loaded, using procedural`, r.reason);
+    if (r.status !== 'fulfilled') {
+      console.warn(`enemy model ${KINDS[i]} not loaded, using procedural`, r.reason);
+      return;
+    }
+    // Translucent cloak panels must not hide each other (or what's behind them) in the depth buffer
+    r.value.scene.traverse(o => {
+      const mat = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if (mat && mat.name === 'EnemyCloak') mat.depthWrite = false;
+    });
+    templates[KINDS[i]] = r.value.scene;
   });
 };
 
@@ -177,13 +187,29 @@ const instantiate = (type: EnemyKind): EnemyModel | null => {
   const root = new THREE.Group();
   root.add(body);
   const phase = Math.random() * Math.PI * 2;
-  const animate = type === 'SCOUT'
-    ? (t: number) => { rotors.forEach((r, k) => { r.rotation.y = t * 40 * (k % 2 ? -1 : 1); }); body.rotation.x = Math.sin(t * 3 + phase) * 0.06; }
-    : type === 'COLOSSUS'
-      ? (t: number) => { body.position.y = Math.sin(t * 1.2 + phase) * 0.12; }
-      : () => {};
+  const heavy = type === 'GUARDIAN' || type === 'COLOSSUS';
+  const animate = (t: number) => {
+    // Rotor blades whirl; rings (Rotor_Weaver, Rotor_Core) turn slowly
+    rotors.forEach((r, k) => { r.rotation.y = t * (/^Rotor_[LR]$/.test(r.name) ? 40 : 5) * (k % 2 ? -1 : 1); });
+    if (type === 'COLOSSUS') body.position.y = Math.sin(t * 1.2 + phase) * 0.12;
+    else if (!heavy) {
+      body.position.y = Math.sin(t * 2.4 + phase) * 0.18;
+      body.rotation.x = Math.sin(t * 3 + phase) * 0.06;
+    }
+  };
   return { root, hover: HOVER[type], animate };
 };
 
-export const buildEnemy = (type: EnemyKind): EnemyModel =>
-  instantiate(type) ?? (type === 'SCOUT' ? buildScout() : type === 'GUARDIAN' ? buildGuardian() : buildColossus());
+const isKind = (type: string): type is EnemyKind => (KINDS as string[]).includes(type);
+
+export const buildEnemy = (type: string): EnemyModel => {
+  const kind: EnemyKind = isKind(type) ? type : 'SCOUT';
+  const authored = instantiate(kind);
+  if (authored) return authored;
+  const fallback = kind === 'GUARDIAN' ? buildGuardian()
+    : kind === 'COLOSSUS' ? buildColossus()
+    : kind === 'INTERCEPTOR' ? buildScout(ENEMY_TYPES.INTERCEPTOR.color, 0.8)
+    : kind === 'PHANTOM' ? buildScout(ENEMY_TYPES.PHANTOM.color, 1.2)
+    : buildScout();
+  return { ...fallback, hover: HOVER[kind] };
+};

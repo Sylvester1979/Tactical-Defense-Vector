@@ -12,7 +12,8 @@ interface Flash { light: THREE.PointLight; life: number; max: number; peak: numb
 interface Tracer { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number }
 interface Beam { mesh: THREE.Mesh; life: number }
 interface Shell { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; apex: number; color: THREE.Color }
-interface Blast { core: THREE.Mesh; ring: THREE.Mesh; life: number }
+interface Blast { core: THREE.Mesh; ring: THREE.Mesh | null; life: number; max: number; size: number }
+interface Shard { mesh: THREE.Mesh; vel: THREE.Vector3; spin: THREE.Vector3; life: number; max: number }
 
 export const createFx = (scene: THREE.Scene) => {
   const flashes: Flash[] = Array.from({ length: 8 }, () => {
@@ -29,7 +30,8 @@ export const createFx = (scene: THREE.Scene) => {
     f.peak = peak;
   };
 
-  const tracers: Tracer[] = [], beams: Beam[] = [], shells: Shell[] = [], blasts: Blast[] = [];
+  const tracers: Tracer[] = [], beams: Beam[] = [], shells: Shell[] = [], blasts: Blast[] = [], shards: Shard[] = [];
+  const shardGeo = new THREE.TetrahedronGeometry(0.22);
   const tracerGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.4, 6);
   tracerGeo.rotateZ(Math.PI / 2);
   const shellGeo = new THREE.SphereGeometry(0.28, 14, 10);
@@ -42,11 +44,51 @@ export const createFx = (scene: THREE.Scene) => {
     m.position.copy(pos);
     m.scale.setScalar(size);
     scene.add(m);
-    blasts.push({ core: m, ring: new THREE.Mesh(), life: 0.06 });
+    blasts.push({ core: m, ring: null, life: 0.06, max: 0.06, size });
     flash(pos, color, 90, 0.08);
   };
 
+  // Fireball + shock ring on the ground, sized to the blast radius (world units)
+  const explode = (pos: THREE.Vector3, color: THREE.ColorRepresentation, radius: number, ground = pos.y) => {
+    const c = new THREE.Color(color);
+    const core = new THREE.Mesh(blastGeo, additive(hdr(c, 3.5), 0.85));
+    core.position.copy(pos);
+    const ring = new THREE.Mesh(ringGeo, additive(hdr(c, 3), 0.7));
+    ring.position.copy(pos).setY(ground + 0.05);
+    scene.add(core, ring);
+    blasts.push({ core, ring, life: 0.5, max: 0.5, size: radius });
+    flash(pos.clone().setY(pos.y + 1.5), c, 80 + radius * 40, 0.4);
+  };
+
+  // Hull fragments flung out when an enemy is destroyed
+  const debris = (pos: THREE.Vector3, color: THREE.ColorRepresentation, count: number) => {
+    const mat = new THREE.MeshStandardMaterial({ color: '#2a3038', emissive: new THREE.Color(color), emissiveIntensity: 2.5, metalness: 0.6, roughness: 0.4 });
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(shardGeo, mat);
+      mesh.position.copy(pos);
+      mesh.scale.setScalar(0.6 + Math.random() * 0.9);
+      scene.add(mesh);
+      const a = Math.random() * Math.PI * 2;
+      const v = 4 + Math.random() * 7;
+      shards.push({
+        mesh, vel: new THREE.Vector3(Math.cos(a) * v, 5 + Math.random() * 7, Math.sin(a) * v),
+        spin: new THREE.Vector3(Math.random() * 12, Math.random() * 12, Math.random() * 12), life: 1.1, max: 1.1,
+      });
+    }
+  };
+
   return {
+    muzzleFlash,
+    explode,
+    debris,
+    flash,
+    // Short spark where a round strikes
+    spark(pos: THREE.Vector3, color: string) {
+      const m = new THREE.Mesh(blastGeo, additive(hdr(color, 6), 0.9));
+      m.position.copy(pos);
+      scene.add(m);
+      blasts.push({ core: m, ring: null, life: 0.12, max: 0.12, size: 0.45 });
+    },
     tracer(from: THREE.Vector3, to: THREE.Vector3, color: string) {
       const mesh = new THREE.Mesh(tracerGeo, additive(hdr(color, 8)));
       scene.add(mesh);
@@ -101,27 +143,43 @@ export const createFx = (scene: THREE.Scene) => {
         if (s.t >= 1) {
           scene.remove(s.mesh);
           shells.splice(i, 1);
-          const core = new THREE.Mesh(blastGeo, additive(hdr(s.color, 5), 0.9));
-          core.position.copy(s.to);
-          const ring = new THREE.Mesh(ringGeo, additive(hdr(s.color, 4), 0.8));
-          ring.position.copy(s.to).setY(s.to.y + 0.05);
-          scene.add(core, ring);
-          blasts.push({ core, ring, life: 0.55 });
-          flash(s.to.clone().setY(s.to.y + 1.5), s.color, 700, 0.5);
+          explode(s.to, s.color, 4);
         }
       }
       for (let i = blasts.length - 1; i >= 0; i--) {
         const b = blasts[i];
-        const max = b.ring.parent ? 0.55 : 0.06;
         b.life -= dt;
-        const k = 1 - Math.max(0, b.life) / max;
-        if (b.ring.parent) {
-          b.core.scale.setScalar(0.6 + k * 2.6);
-          b.ring.scale.setScalar(0.5 + k * 6.5);
+        const k = 1 - Math.max(0, b.life) / b.max;
+        if (b.ring) {
+          // A compact fireball (it shouldn't hide the battlefield); the shock ring sweeps out to the radius
+          b.core.scale.setScalar(Math.min(1.3, b.size * 0.3) * (0.6 + 0.8 * k));
+          b.ring.scale.setScalar(b.size * (0.15 + 0.85 * k));
           (b.ring.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k);
+        } else {
+          b.core.scale.setScalar(b.size * (1 + k));
         }
         (b.core.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - k);
-        if (b.life <= 0) { scene.remove(b.core, b.ring); blasts.splice(i, 1); }
+        if (b.life <= 0) {
+          scene.remove(b.core);
+          (b.core.material as THREE.Material).dispose();
+          if (b.ring) { scene.remove(b.ring); (b.ring.material as THREE.Material).dispose(); }
+          blasts.splice(i, 1);
+        }
+      }
+      for (let i = shards.length - 1; i >= 0; i--) {
+        const sh = shards[i];
+        sh.life -= dt;
+        sh.vel.y -= 22 * dt;
+        sh.mesh.position.addScaledVector(sh.vel, dt);
+        if (sh.mesh.position.y < 0.1) { sh.mesh.position.y = 0.1; sh.vel.multiplyScalar(0.4); sh.vel.y = Math.abs(sh.vel.y) * 0.3; }
+        sh.mesh.rotation.x += sh.spin.x * dt; sh.mesh.rotation.y += sh.spin.y * dt; sh.mesh.rotation.z += sh.spin.z * dt;
+        const mat = sh.mesh.material as THREE.MeshStandardMaterial;
+        mat.emissiveIntensity = 2.5 * Math.max(0, sh.life / sh.max);
+        if (sh.life <= 0) {
+          scene.remove(sh.mesh);
+          shards.splice(i, 1);
+          if (!shards.some(o => o.mesh.material === mat)) mat.dispose();
+        }
       }
     },
   };

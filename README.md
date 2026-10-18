@@ -1,6 +1,6 @@
 # Tactical Defense: Vector
 
-An isometric tower defense game built with React and Canvas 2D. Hold the core
+An isometric tower defense game built with React and Three.js (WebGL). Hold the core
 against 20 scripted waves (and endless procedural ones after that) using three
 tower lines, each with two specializations.
 
@@ -42,22 +42,27 @@ npm run lint     # type-check
 | `T` | Cycle targeting priority |
 | `Esc` | Cancel / deselect |
 
-## 3D rendering prototype
+## Rendering
 
-`prototype.html` is a standalone WebGL (Three.js) rendering of the same battlefield — PBR
-materials, real-time shadows, ambient occlusion, HDR bloom and a night-time reflection
-environment — used to evaluate moving the game to a 3D renderer. It is not playable.
+The battlefield renders in WebGL with Three.js: models built in Blender (`tools/models/`),
+PBR materials with baked weathering, real-time shadows, ambient occlusion and HDR bloom.
+The renderer lowers its own quality (ambient occlusion first, then resolution) on slower GPUs.
+
+- `?quality=low` starts without ambient occlusion.
+- `?renderer=2d` uses the original Canvas 2D renderer (also the automatic fallback when the
+  browser has no WebGL2). Three.js is loaded on demand, so the 2D path never downloads it.
+- `?models=procedural` swaps the authored models for the primitive-built ones.
+
+`prototype.html` is a non-playable looping skirmish for inspecting models up close:
 
 ```bash
-npm run dev      # then open http://localhost:3000/prototype.html
-                 # close-up: /prototype.html?zoom=3&x=-6&z=-10
+npm run dev      # then open http://localhost:3000/prototype.html?zoom=3&x=-6&z=-10
 ```
-
-Code lives in `src/proto/`; the game itself does not load Three.js.
 
 ## Project layout
 
 - `src/hooks/useGame.ts` — simulation loop (spawning, movement, projectiles, economy)
 - `src/constants.ts` — tower/enemy stats, wave table and shared balance helpers
-- `src/components/GameCanvas.tsx` — isometric renderer
+- `src/components/GameView3D.tsx`, `src/render3d/` — WebGL renderer (scene sync, models, effects)
+- `src/components/GameCanvas.tsx` — Canvas 2D renderer (fallback)
 - `src/components/UIOverlay.tsx`, `TowerModule.tsx` — HUD, sidebar and tower panel

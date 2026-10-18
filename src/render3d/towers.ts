@@ -246,10 +246,38 @@ const instantiate = (family: TowerModel['family'], color: string): TowerModel | 
   };
 };
 
-export const buildTower = (type: TowerType): TowerModel => {
+// light: the coloured point light above the tower. The game leaves it out (a light per tower
+// changes the light count, recompiling every shader whenever a tower is built) and fakes the
+// pool of colour with a ground decal instead.
+export const buildTower = (type: TowerType, { light = true } = {}): TowerModel => {
   const color = TOWER_STATS[type].color;
   const base = TOWER_STATS[type].type;
-  if (base === TowerType.SNIPER || type === TowerType.RAILGUN_HYPER || type === TowerType.RAILGUN_PIERCER) return instantiate('railgun', color) ?? buildRailgun(color);
-  if (base === TowerType.SPLASH || type === TowerType.MORTAR_CRYO || type === TowerType.MORTAR_BOMBER) return instantiate('mortar', color) ?? buildMortar(color);
-  return instantiate('vulcan', color) ?? buildVulcan(color);
+  let model: TowerModel;
+  if (base === TowerType.SNIPER || type === TowerType.RAILGUN_HYPER || type === TowerType.RAILGUN_PIERCER) model = instantiate('railgun', color) ?? buildRailgun(color);
+  else if (base === TowerType.SPLASH || type === TowerType.MORTAR_CRYO || type === TowerType.MORTAR_BOMBER) model = instantiate('mortar', color) ?? buildMortar(color);
+  else model = instantiate('vulcan', color) ?? buildVulcan(color);
+  if (!light) {
+    const lights: THREE.Object3D[] = [];
+    model.root.traverse(o => { if ((o as THREE.Light).isLight) lights.push(o); });
+    lights.forEach(l => l.removeFromParent());
+  }
+  return model;
+};
+
+// Translucent hologram of a tower, for the placement preview
+const ghostMats = new Map<string, THREE.MeshBasicMaterial>();
+export const buildGhost = (type: TowerType, color: string): TowerModel => {
+  const model = buildTower(type, { light: false });
+  let mat = ghostMats.get(color);
+  if (!mat) {
+    mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(0.9), transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending });
+    ghostMats.set(color, mat);
+  }
+  model.root.traverse(o => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.material = mat;
+    mesh.castShadow = mesh.receiveShadow = false;
+  });
+  return model;
 };
