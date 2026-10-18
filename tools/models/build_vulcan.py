@@ -41,9 +41,14 @@ BODY_Z0 = 0.88
 base = []
 base.append(cylinder(2.5, PLINTH_H, loc=(0, 0, PLINTH_H / 2), rot=(0, 0, math.radians(22.5)), verts=8, mat=ARMOR_DARK, bevel=0.1))
 base.append(cylinder(2.1, 0.18, loc=(0, 0, 0.79), rot=(0, 0, math.radians(22.5)), verts=8, mat=ARMOR, bevel=0.04))
+STEP_TOP = 0.88
+# Hex bolts with washers, one in each corner of the step: the corners have the most room
+# between the body and the step's edge (edge-midpoints are only ~0.5 from the body)
 for k in range(8):
-    a = math.radians(k * 45)
-    base.append(cylinder(0.11, 0.12, loc=(math.cos(a) * 1.92, math.sin(a) * 1.92, 0.94), verts=12, mat=STEEL, bevel=0.02))
+    a = math.radians(22.5 + k * 45)
+    x, y = math.cos(a) * 1.8, math.sin(a) * 1.8
+    base.append(cylinder(0.14, 0.03, loc=(x, y, STEP_TOP + 0.015), verts=16, mat=STEEL))
+    base.append(cylinder(0.095, 0.09, loc=(x, y, STEP_TOP + 0.075), rot=(0, 0, a), verts=6, mat=STEEL, bevel=0.015))
 BODY_R0, BODY_R1 = 1.62, 1.22
 APOTHEM = math.cos(math.radians(30))  # hex face distance / corner radius
 
