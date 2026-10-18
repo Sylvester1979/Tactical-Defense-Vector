@@ -67,7 +67,7 @@ def hazard_strip(length, height, loc, rot_z=0.0, depth=0.04):
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     bpy.ops.object.join()
     stripes = bpy.context.active_object
-    intersect(stripes, box((length - 0.02, depth + 0.02, height - 0.02)))
+    intersect(stripes, box((length - 0.02, depth + 0.02, height - 0.02), mat=HAZARD_DARK))  # clipped ends stay striped
     for o in (plate, stripes):
         o.location = loc
         o.rotation_euler = (0, 0, rot_z)
