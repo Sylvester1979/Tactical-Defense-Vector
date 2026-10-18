@@ -94,6 +94,10 @@ def sphere(radius, loc=(0, 0, 0), mat=None, segments=24, rings=16):
 
 def cut(target, cutter):
     """Boolean-subtract `cutter` from `target`, then delete the cutter."""
+    # The faces a cut opens up take the cutter's material; without one they'd end up with none
+    if target.data.materials and not any(cutter.data.materials):
+        cutter.data.materials.clear()
+        cutter.data.materials.append(target.data.materials[0])
     mod = target.modifiers.new('cut', 'BOOLEAN')
     mod.object = cutter
     mod.operation = 'DIFFERENCE'

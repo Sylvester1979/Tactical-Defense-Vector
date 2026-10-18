@@ -16,6 +16,7 @@ import bpy
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (reset_scene, empty, box, cylinder, torus, sphere, cut, join,  # noqa: E402
                     curve_tube, setup_render_stage, tower_materials, tower_base)
+from bake import bake_model, EXPORT_IMAGES  # noqa: E402
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:]
 OUT = os.path.abspath(argv[0] if argv else '.')
@@ -97,12 +98,15 @@ barrels.append(collar)
 join('Barrels', barrels, parent=spin, loc=(0, 0, 0))
 empty('Muzzle', parent=recoil, loc=(2.55, 0, 0))
 
+# ── Weather and bake textures (skip with --no-bake) ───────────────────────
+bake_model(root)
+
 # ── Export the model, then add the render stage and save the .blend ────────
 bpy.ops.object.select_all(action='DESELECT')
 for o in [root] + list(root.children_recursive):
     o.select_set(True)
 bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'vulcan.glb'), export_format='GLB', use_selection=True,
-                          export_yup=True, export_apply=True)
+                          export_yup=True, export_apply=True, **EXPORT_IMAGES)
 print('exported', os.path.join(OUT, 'vulcan.glb'), os.path.getsize(os.path.join(OUT, 'vulcan.glb')), 'bytes')
 
 setup_render_stage(target_height=3.0)

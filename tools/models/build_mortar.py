@@ -17,6 +17,7 @@ import bpy
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (reset_scene, material, empty, box, cylinder, torus, sphere, cut, join,  # noqa: E402
                     curve_tube, setup_render_stage, tower_materials, tower_base)
+from bake import bake_model, EXPORT_IMAGES  # noqa: E402
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:]
 OUT = os.path.abspath(argv[0] if argv else '.')
@@ -209,12 +210,15 @@ empty('Muzzle', parent=recoil, loc=(T1 - X0, 0, 0))
 pitch.rotation_euler = (0, -ELEVATION, 0)
 bpy.context.view_layer.update()
 
+# ── Weather and bake textures (skip with --no-bake) ───────────────────────
+bake_model(root)
+
 # ── Export the model, then add the render stage and save the .blend ────────
 bpy.ops.object.select_all(action='DESELECT')
 for o in [root] + list(root.children_recursive):
     o.select_set(True)
 bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'mortar.glb'), export_format='GLB', use_selection=True,
-                          export_yup=True, export_apply=True)
+                          export_yup=True, export_apply=True, **EXPORT_IMAGES)
 print('exported', os.path.join(OUT, 'mortar.glb'), os.path.getsize(os.path.join(OUT, 'mortar.glb')), 'bytes')
 print('muzzle world', tuple(round(v, 3) for v in bpy.data.objects['Muzzle'].matrix_world.translation))
 
