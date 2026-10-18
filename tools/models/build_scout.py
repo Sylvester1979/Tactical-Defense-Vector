@@ -30,7 +30,7 @@ SHELL_DARK = material('ScoutPanel', '#5c6672', metallic=0.7, roughness=0.4)
 DUCT = material('ScoutDuct', '#1b2028', metallic=0.75, roughness=0.42)
 BLADE = material('ScoutBlade', '#0f1216', metallic=0.4, roughness=0.55)
 STEEL = material('ScoutSteel', '#9aa4b0', metallic=1.0, roughness=0.28)
-GLOW = material('EnemyGlow', '#05070a', roughness=0.25, emission='#00f2ff', emission_strength=10)
+GLOW = material('EnemyGlow', '#05070a', roughness=0.25, emission='#00f2ff', emission_strength=3.5)  # many small lights: keep the bloom from swallowing the hull
 GLOW_SOFT = material('EnemyGlowSoft', '#06161a', roughness=0.06, metallic=0.3, emission='#00f2ff', emission_strength=1.2)
 
 
