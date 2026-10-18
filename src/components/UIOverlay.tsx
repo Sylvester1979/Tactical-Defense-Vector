@@ -46,6 +46,8 @@ interface UIOverlayProps {
   bestWaves: number;
   newRecord: boolean;
   restoredFromSave: boolean;
+  // Flat screen-space grid over the arena; it suits the 2D renderer but not the 3D scene's perspective
+  screenGrid: boolean;
 }
 
 const MODIFIER_STYLE: Record<WaveModifier, { label: string; color: string; desc: string }> = {
@@ -103,7 +105,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   renderCanvas,
   bestWaves,
   newRecord,
-  restoredFromSave
+  restoredFromSave,
+  screenGrid,
 }) => {
   const selectedTower = towers.find(t => t.id === gameState.selectedTowerId);
 
@@ -516,11 +519,13 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             )}
 
             {/* Grid Overlay simulation */}
-            <div className="absolute inset-0 pointer-events-none grid grid-cols-[repeat(20,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] opacity-10">
-               {[...Array(300)].map((_, i) => (
-                 <div key={i} className="border-[0.5px] border-border-dim" />
-               ))}
-            </div>
+            {screenGrid && (
+              <div className="absolute inset-0 pointer-events-none grid grid-cols-[repeat(20,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] opacity-10">
+                 {[...Array(300)].map((_, i) => (
+                   <div key={i} className="border-[0.5px] border-border-dim" />
+                 ))}
+              </div>
+            )}
 
             {/* Core breach flash — red edges, stronger the more lives were lost */}
             <AnimatePresence>

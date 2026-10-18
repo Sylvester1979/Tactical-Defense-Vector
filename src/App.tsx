@@ -230,6 +230,7 @@ export default function App() {
         bestWaves={bestWaves}
         newRecord={newRecord}
         restoredFromSave={restoredFromSave}
+        screenGrid={!use3D}
         onUpgradeTower={upgradeTower}
         onSpecializeTower={specializeTower}
         onSellTower={sellTower}
