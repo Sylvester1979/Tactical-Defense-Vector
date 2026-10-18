@@ -193,23 +193,32 @@ const buildMortar = (color: string): TowerModel => {
 // ── Authored models (built in Blender by tools/models/build_*.py) ──────────
 const templates: Partial<Record<TowerModel['family'], THREE.Group>> = {};
 
+// ?models=procedural keeps the primitive-built towers and enemies for comparison
+export const useAuthoredModels = () => new URLSearchParams(location.search).get('models') !== 'procedural';
+
 export const loadTowerModels = async () => {
-  // ?vulcan=procedural keeps the primitive-built Vulcan for comparison
-  if (new URLSearchParams(location.search).get('vulcan') === 'procedural') return;
-  const gltf = await new GLTFLoader().loadAsync('/models/vulcan.glb');
-  templates.vulcan = gltf.scene;
+  if (!useAuthoredModels()) return;
+  const loader = new GLTFLoader();
+  const families: TowerModel['family'][] = ['vulcan', 'railgun', 'mortar'];
+  // A model that fails to load falls back to its procedural version
+  const results = await Promise.allSettled(families.map(f => loader.loadAsync(`/models/${f}.glb`)));
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') templates[families[i]] = r.value.scene;
+    else console.warn(`tower model ${families[i]} not loaded, using procedural`, r.reason);
+  });
 };
 
 const instantiate = (family: TowerModel['family'], color: string): TowerModel | null => {
   const template = templates[family];
   if (!template) return null;
   const root = template.clone(true);
+  const find = (name: string) => root.getObjectByName(name) as THREE.Group | undefined;
   const node = (name: string) => {
-    const n = root.getObjectByName(name);
+    const n = find(name);
     if (!n) throw new Error(`model "${family}" is missing node ${name}`);
-    return n as THREE.Group;
+    return n;
   };
-  // Each tower pulses its own energy band, so it needs its own copy of the glow material
+  // Each tower pulses its own energy parts in its own colour, so it gets its own copy of the glow material
   let band: THREE.MeshStandardMaterial | null = null;
   root.traverse(o => {
     const mesh = o as THREE.Mesh;
@@ -223,21 +232,24 @@ const instantiate = (family: TowerModel['family'], color: string): TowerModel | 
     });
     mesh.material = Array.isArray(mesh.material) ? swapped : swapped[0];
   });
+  band ??= glow(color, 3);
+  band.emissive.set(color);
+  const yaw = node('Yaw');
   const pool = new THREE.PointLight(color, 40, 15, 2);
-  pool.position.set(0, 6.2, 0);
+  pool.position.set(0, yaw.position.y + 2.4, 0);
   root.add(pool);
   const group = new THREE.Group();
   group.add(root);
   return {
-    root: group, yaw: node('Yaw'), pitch: node('Pitch'), recoil: node('Recoil'), spin: node('Spin'),
-    muzzles: [node('Muzzle')], band: band ?? glow(color, 3), family,
+    root: group, yaw, pitch: node('Pitch'), recoil: node('Recoil'), spin: find('Spin'),
+    muzzles: [node('Muzzle')], band, family,
   };
 };
 
 export const buildTower = (type: TowerType): TowerModel => {
   const color = TOWER_STATS[type].color;
   const base = TOWER_STATS[type].type;
-  if (base === TowerType.SNIPER || type === TowerType.RAILGUN_HYPER || type === TowerType.RAILGUN_PIERCER) return buildRailgun(color);
-  if (base === TowerType.SPLASH || type === TowerType.MORTAR_CRYO || type === TowerType.MORTAR_BOMBER) return buildMortar(color);
+  if (base === TowerType.SNIPER || type === TowerType.RAILGUN_HYPER || type === TowerType.RAILGUN_PIERCER) return instantiate('railgun', color) ?? buildRailgun(color);
+  if (base === TowerType.SPLASH || type === TowerType.MORTAR_CRYO || type === TowerType.MORTAR_BOMBER) return instantiate('mortar', color) ?? buildMortar(color);
   return instantiate('vulcan', color) ?? buildVulcan(color);
 };

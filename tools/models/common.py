@@ -213,3 +213,73 @@ def setup_render_stage(target_height=3.0, resolution=1200):
     c.target = target
     scene.camera = cam
     return scene
+
+
+# ── Shared tower parts ─────────────────────────────────────────────────────
+PLINTH_H = 0.7
+BODY_Z0 = 0.88   # top of the plinth step, where the body starts
+BODY_R0, BODY_R1 = 1.62, 1.22  # tapered hex body: corner radius at bottom / top
+HEX_APOTHEM = math.cos(math.radians(30))  # hex face distance / corner radius
+
+
+def tower_materials(glow='#3b82f6'):
+    """The tower family's paint and metal. `Glow` is the energy band the game recolours per tower."""
+    return {
+        'armor': material('Armor', '#47515f', metallic=0.35, roughness=0.45),
+        'armor_light': material('ArmorLight', '#5b6676', metallic=0.3, roughness=0.42),
+        'armor_dark': material('ArmorDark', '#262d36', metallic=0.55, roughness=0.5),
+        'steel': material('Steel', '#9aa4b0', metallic=1.0, roughness=0.3),
+        'gun': material('Gunmetal', '#2a2f36', metallic=0.85, roughness=0.32),
+        'rubber': material('Rubber', '#0d0f12', metallic=0.0, roughness=0.8),
+        'glow': material('Glow', '#05070a', roughness=0.3, emission=glow, emission_strength=8),
+        'lens': material('Lens', '#05070a', roughness=0.1, emission='#8fbaff', emission_strength=10),
+    }
+
+
+def tower_base(root, M, body_h=2.3, seams=(0.55, 1.45), plate_z=1.0, plate_h=0.75, band_z=1.62):
+    """Octagonal plinth with bolts, tapered armoured hex body, energy band and yaw bearing.
+
+    Heights other than body_h are measured up from BODY_Z0. Returns the yaw pivot height.
+    """
+    body_r1 = BODY_R0 + (BODY_R1 - BODY_R0) * body_h / 2.3  # same taper angle at any height
+
+    def body_apothem(z):
+        return (BODY_R0 + (body_r1 - BODY_R0) * (z - BODY_Z0) / body_h) * HEX_APOTHEM
+
+    base = [
+        cylinder(2.5, PLINTH_H, loc=(0, 0, PLINTH_H / 2), rot=(0, 0, math.radians(22.5)), verts=8, mat=M['armor_dark'], bevel=0.1),
+        cylinder(2.1, 0.18, loc=(0, 0, 0.79), rot=(0, 0, math.radians(22.5)), verts=8, mat=M['armor'], bevel=0.04),
+    ]
+    # Hex bolts with washers, one in each corner of the step: the corners have the most room
+    # between the body and the step's edge (edge-midpoints are only ~0.5 from the body)
+    for k in range(8):
+        a = math.radians(22.5 + k * 45)
+        x, y = math.cos(a) * 1.8, math.sin(a) * 1.8
+        base.append(cylinder(0.14, 0.03, loc=(x, y, BODY_Z0 + 0.015), verts=16, mat=M['steel']))
+        base.append(cylinder(0.095, 0.09, loc=(x, y, BODY_Z0 + 0.075), rot=(0, 0, a), verts=6, mat=M['steel'], bevel=0.015))
+    body = cylinder(BODY_R0, body_h, radius2=body_r1, loc=(0, 0, BODY_Z0 + body_h / 2), verts=6, mat=M['armor'], bevel=0.07)
+    # Horizontal panel seams cut into the body
+    for dz in seams:
+        z = BODY_Z0 + dz
+        seam = cylinder(2.0, 0.05, loc=(0, 0, z), verts=6)
+        inner = cylinder((body_apothem(z) - 0.04) / HEX_APOTHEM, 0.2, loc=(0, 0, z), verts=6)  # 4 cm deep groove
+        cut(seam, inner)
+        cut(body, seam)
+    base.append(body)
+    # Armour plates on each face, tilted with the taper
+    slope = math.atan((BODY_R0 - body_r1) / body_h)
+    for k in range(6):
+        a = math.radians(30 + k * 60)
+        r = body_apothem(BODY_Z0 + plate_z) + 0.05
+        base.append(box((0.1, 0.95, plate_h), loc=(math.cos(a) * r, math.sin(a) * r, BODY_Z0 + plate_z),
+                        rot=(0, -slope, a), mat=M['armor_light'], bevel=0.03))
+    bz = BODY_Z0 + band_z
+    corner_r = body_apothem(bz) / HEX_APOTHEM  # the band wraps just outside the hex corners
+    base.append(torus(corner_r + 0.022, 0.075, loc=(0, 0, bz), mat=M['glow']))
+    for dz in (-0.13, 0.13):
+        base.append(torus(corner_r + 0.002, 0.04, loc=(0, 0, bz + dz), mat=M['steel'], minor_seg=8))
+    top = BODY_Z0 + body_h
+    base.append(cylinder(1.32, 0.16, loc=(0, 0, top + 0.04), verts=6, mat=M['armor_dark'], bevel=0.03))
+    base.append(cylinder(1.2, 0.28, loc=(0, 0, top + 0.26), verts=40, mat=M['steel'], bevel=0.03))
+    join('Base', base, parent=root)
+    return top + 0.4

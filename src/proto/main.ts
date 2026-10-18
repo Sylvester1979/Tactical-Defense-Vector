@@ -4,7 +4,7 @@ import { TowerType } from '../types';
 import { createStage } from './stage';
 import { buildWorld } from './world';
 import { buildTower, loadTowerModels, TowerModel } from './towers';
-import { buildEnemy, EnemyModel } from './enemies';
+import { buildEnemy, EnemyModel, loadEnemyModels } from './enemies';
 import { createFx } from './fx';
 import { toWorld, ROAD_H } from './coords';
 
@@ -35,8 +35,7 @@ const along = (d: number) => {
 // ── Towers (game coordinates, same spots a player might pick) ──
 interface Tower { model: TowerModel; type: TowerType; range: number; cooldown: number; rate: number; kick: number }
 const towers: Tower[] = [];
-loadTowerModels().catch(err => console.error('model load failed, using procedural towers', err)).then(() => {
-  towers.push(...([
+const placeTowers = () => towers.push(...([
   [TowerType.BASIC, 300, 200], [TowerType.SNIPER, 560, 200], [TowerType.SPLASH, 330, 400],
   [TowerType.BASIC, 580, 400], [TowerType.SNIPER, 780, 300], [TowerType.SPLASH, 160, 420],
 ] as const).map(([type, x, y]) => {
@@ -47,7 +46,6 @@ loadTowerModels().catch(err => console.error('model load failed, using procedura
   const s = TOWER_STATS[type];
   return { model, type, range: (s.range * 1.4) / 10, cooldown: Math.random(), rate: s.fireRate * 1.4, kick: 0 };
 }));
-});
 
 // ── Enemies looping along the road ──
 interface Enemy { model: EnemyModel; dist: number; speed: number; pos: THREE.Vector3 }
@@ -55,11 +53,17 @@ const roster: ['SCOUT' | 'GUARDIAN' | 'COLOSSUS', number, number][] = [
   ['COLOSSUS', 40, 2.2], ['GUARDIAN', 70, 3.4], ['GUARDIAN', 95, 3.4], ['SCOUT', 20, 8], ['SCOUT', 55, 8],
   ['SCOUT', 120, 8], ['SCOUT', 150, 8], ['GUARDIAN', 140, 3.4], ['SCOUT', 175, 8],
 ];
-const enemies: Enemy[] = roster.map(([type, dist, speed]) => {
+const enemies: Enemy[] = [];
+const spawnEnemies = () => enemies.push(...roster.map(([type, dist, speed]) => {
   const model = buildEnemy(type);
   stage.scene.add(model.root);
   return { model, dist, speed, pos: new THREE.Vector3() };
-});
+}));
+
+// Authored models load first; anything missing falls back to its procedural version
+Promise.all([loadTowerModels(), loadEnemyModels()])
+  .catch(err => console.error('model load failed, using procedural models', err))
+  .then(() => { placeTowers(); spawnEnemies(); });
 
 // ── Loop ──
 const timer = new THREE.Timer();
