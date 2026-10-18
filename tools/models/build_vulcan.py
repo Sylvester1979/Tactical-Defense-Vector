@@ -14,8 +14,8 @@ import sys
 import bpy
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (reset_scene, material, empty, box, cylinder, torus, sphere, cut, join,  # noqa: E402
-                    curve_tube, setup_render_stage)
+from common import (reset_scene, empty, box, cylinder, torus, sphere, cut, join,  # noqa: E402
+                    curve_tube, setup_render_stage, tower_materials, tower_base)
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:]
 OUT = os.path.abspath(argv[0] if argv else '.')
@@ -24,65 +24,16 @@ os.makedirs(OUT, exist_ok=True)
 reset_scene()
 
 # ── Materials ───────────────────────────────────────────────────────────────
-ARMOR = material('Armor', '#47515f', metallic=0.35, roughness=0.45)
-ARMOR_LIGHT = material('ArmorLight', '#5b6676', metallic=0.3, roughness=0.42)
-ARMOR_DARK = material('ArmorDark', '#262d36', metallic=0.55, roughness=0.5)
-STEEL = material('Steel', '#9aa4b0', metallic=1.0, roughness=0.3)
-GUN = material('Gunmetal', '#2a2f36', metallic=0.85, roughness=0.32)
-RUBBER = material('Rubber', '#0d0f12', metallic=0.0, roughness=0.8)
-GLOW = material('Glow', '#05070a', roughness=0.3, emission='#3b82f6', emission_strength=8)
-LENS = material('Lens', '#05070a', roughness=0.1, emission='#8fbaff', emission_strength=10)
+M = tower_materials()
+ARMOR, ARMOR_LIGHT, ARMOR_DARK = M['armor'], M['armor_light'], M['armor_dark']
+STEEL, GUN, RUBBER, GLOW, LENS = M['steel'], M['gun'], M['rubber'], M['glow'], M['lens']
 
 root = empty('Vulcan')
 
 # ── Base: plinth, armoured hex body, energy band, yaw bearing ──────────────
-PLINTH_H, BODY_H = 0.7, 2.3
-BODY_Z0 = 0.88
-base = []
-base.append(cylinder(2.5, PLINTH_H, loc=(0, 0, PLINTH_H / 2), rot=(0, 0, math.radians(22.5)), verts=8, mat=ARMOR_DARK, bevel=0.1))
-base.append(cylinder(2.1, 0.18, loc=(0, 0, 0.79), rot=(0, 0, math.radians(22.5)), verts=8, mat=ARMOR, bevel=0.04))
-STEP_TOP = 0.88
-# Hex bolts with washers, one in each corner of the step: the corners have the most room
-# between the body and the step's edge (edge-midpoints are only ~0.5 from the body)
-for k in range(8):
-    a = math.radians(22.5 + k * 45)
-    x, y = math.cos(a) * 1.8, math.sin(a) * 1.8
-    base.append(cylinder(0.14, 0.03, loc=(x, y, STEP_TOP + 0.015), verts=16, mat=STEEL))
-    base.append(cylinder(0.095, 0.09, loc=(x, y, STEP_TOP + 0.075), rot=(0, 0, a), verts=6, mat=STEEL, bevel=0.015))
-BODY_R0, BODY_R1 = 1.62, 1.22
-APOTHEM = math.cos(math.radians(30))  # hex face distance / corner radius
-
-
-def body_apothem(z):
-    """Distance from the axis to a face of the tapered hex body at height z."""
-    return (BODY_R0 + (BODY_R1 - BODY_R0) * (z - BODY_Z0) / BODY_H) * APOTHEM
-
-
-body = cylinder(BODY_R0, BODY_H, radius2=BODY_R1, loc=(0, 0, BODY_Z0 + BODY_H / 2), verts=6, mat=ARMOR, bevel=0.07)
-# Two horizontal panel seams cut into the body
-for z in (BODY_Z0 + 0.55, BODY_Z0 + 1.45):
-    seam = cylinder(2.0, 0.05, loc=(0, 0, z), verts=6)
-    inner = cylinder((body_apothem(z) - 0.04) / APOTHEM, 0.2, loc=(0, 0, z), verts=6)  # 4 cm deep groove
-    cut(seam, inner)
-    cut(body, seam)
-base.append(body)
-# Armour plates on each face, tilted with the taper
-slope = math.atan(0.4 / BODY_H)
-for k in range(6):
-    a = math.radians(30 + k * 60)
-    r = body_apothem(BODY_Z0 + 1.0) + 0.05
-    base.append(box((0.1, 0.95, 0.75), loc=(math.cos(a) * r, math.sin(a) * r, BODY_Z0 + 1.0),
-                    rot=(0, -slope, a), mat=ARMOR_LIGHT, bevel=0.03))
-BAND_Z = BODY_Z0 + 1.62
-base.append(torus(1.36, 0.075, loc=(0, 0, BAND_Z), mat=GLOW))
-for dz in (-0.13, 0.13):
-    base.append(torus(1.34, 0.04, loc=(0, 0, BAND_Z + dz), mat=STEEL, minor_seg=8))
-base.append(cylinder(1.32, 0.16, loc=(0, 0, BODY_Z0 + BODY_H + 0.04), verts=6, mat=ARMOR_DARK, bevel=0.03))
-base.append(cylinder(1.2, 0.28, loc=(0, 0, BODY_Z0 + BODY_H + 0.26), verts=40, mat=STEEL, bevel=0.03))
-join('Base', base, parent=root)
+YAW_Z = tower_base(root, M)
 
 # ── Turret (yaw) ────────────────────────────────────────────────────────────
-YAW_Z = BODY_Z0 + BODY_H + 0.4
 yaw = empty('Yaw', parent=root, loc=(0, 0, YAW_Z))
 turret = []
 housing = box((2.3, 2.0, 1.2), loc=(-0.2, 0, YAW_Z + 0.62), mat=ARMOR, bevel=0.12, segments=3, angle=30)

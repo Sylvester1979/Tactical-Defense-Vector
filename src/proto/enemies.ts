@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ENEMY_TYPES } from '../constants';
 import { makeHullDetail } from './textures';
+import { useAuthoredModels } from './towers';
 
 // Enemy models. Local frame: +X is forward (direction of travel), +Y up.
 
@@ -149,5 +151,39 @@ const buildColossus = (): EnemyModel => {
   return { root: shadowed(root), hover: 0.4, animate: t => { root.position.y += Math.sin(t * 1.2) * 0.003; } };
 };
 
-export const buildEnemy = (type: 'SCOUT' | 'GUARDIAN' | 'COLOSSUS'): EnemyModel =>
-  type === 'SCOUT' ? buildScout() : type === 'GUARDIAN' ? buildGuardian() : buildColossus();
+// ── Authored models (built in Blender by tools/models/build_*.py) ──────────
+type EnemyKind = 'SCOUT' | 'GUARDIAN' | 'COLOSSUS';
+const templates: Partial<Record<EnemyKind, THREE.Group>> = {};
+const HOVER: Record<EnemyKind, number> = { SCOUT: 3.2, GUARDIAN: 0, COLOSSUS: 0.4 };
+
+export const loadEnemyModels = async () => {
+  if (!useAuthoredModels()) return;
+  const loader = new GLTFLoader();
+  const kinds: EnemyKind[] = ['SCOUT', 'GUARDIAN', 'COLOSSUS'];
+  const results = await Promise.allSettled(kinds.map(k => loader.loadAsync(`/models/${k.toLowerCase()}.glb`)));
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') templates[kinds[i]] = r.value.scene;
+    else console.warn(`enemy model ${kinds[i]} not loaded, using procedural`, r.reason);
+  });
+};
+
+const instantiate = (type: EnemyKind): EnemyModel | null => {
+  const template = templates[type];
+  if (!template) return null;
+  // The outer group is steered by the game (position, heading); the inner one bobs and banks
+  const body = shadowed(template.clone(true));
+  const rotors: THREE.Object3D[] = [];
+  body.traverse(o => { if (o.name.startsWith('Rotor_')) rotors.push(o); });
+  const root = new THREE.Group();
+  root.add(body);
+  const phase = Math.random() * Math.PI * 2;
+  const animate = type === 'SCOUT'
+    ? (t: number) => { rotors.forEach((r, k) => { r.rotation.y = t * 40 * (k % 2 ? -1 : 1); }); body.rotation.x = Math.sin(t * 3 + phase) * 0.06; }
+    : type === 'COLOSSUS'
+      ? (t: number) => { body.position.y = Math.sin(t * 1.2 + phase) * 0.12; }
+      : () => {};
+  return { root, hover: HOVER[type], animate };
+};
+
+export const buildEnemy = (type: EnemyKind): EnemyModel =>
+  instantiate(type) ?? (type === 'SCOUT' ? buildScout() : type === 'GUARDIAN' ? buildGuardian() : buildColossus());
