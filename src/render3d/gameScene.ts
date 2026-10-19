@@ -8,6 +8,7 @@ import { buildWorld } from './world';
 import { buildGhost, buildTower, loadTowerModels, TowerModel } from './towers';
 import { buildEnemy, EnemyModel, loadEnemyModels } from './enemies';
 import { createFx } from './fx';
+import { onLoadProgress } from './loader';
 import { toWorld, ROAD_H, UNIT, FIELD_W, FIELD_D } from './coords';
 
 // The game rendered in WebGL. Each frame it reads the current game state and brings the scene in
@@ -106,7 +107,10 @@ interface ProjectileView {
   marker: THREE.Group | null; last: Projectile; seen: boolean;
 }
 
-export const createGameScene = (host: HTMLElement, hud: HTMLCanvasElement, read: () => SceneInputs, onReady: () => void) => {
+export const createGameScene = (
+  host: HTMLElement, hud: HTMLCanvasElement, read: () => SceneInputs,
+  onReady: () => void, onProgress: (fraction: number) => void,
+) => {
   const focus = fromIso(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
   const stage = createStage(host, { focus: toWorld(focus.x, focus.y), viewHeight: VIEW_H, viewWidth: VIEW_W });
   const { scene, camera } = stage;
@@ -294,7 +298,33 @@ export const createGameScene = (host: HTMLElement, hud: HTMLCanvasElement, read:
 
   // ── Frame ──
   let loaded = false, disposed = false, raf = 0;
-  loadModels().then(() => { if (!disposed) { loaded = true; onReady(); } });
+  // Before play starts: compile every model's shaders and upload its textures, so the first tower
+  // built or the first enemy of each kind doesn't stall a frame mid-fight
+  const warmUp = async () => {
+    const stash = new THREE.Group();
+    for (const type of [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH]) {
+      stash.add(buildTower(type, { light: false }).root, buildGhost(type, TOWER_STATS[type].color).root);
+    }
+    for (const kind of Object.keys(ENEMY_TYPES)) stash.add(buildEnemy(kind).root);
+    scene.add(stash);
+    await stage.renderer.compileAsync(scene, camera);
+    stash.traverse(o => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        for (const value of Object.values(mat)) if (value instanceof THREE.Texture) stage.renderer.initTexture(value);
+      }
+    });
+    scene.remove(stash);
+  };
+  onLoadProgress(fraction => { if (!disposed) onProgress(fraction); });
+  loadModels()
+    .then(() => (disposed ? undefined : warmUp()))
+    .catch(err => console.warn('model warm-up failed', err))
+    .then(() => {
+      onLoadProgress(null);
+      if (!disposed) { loaded = true; onReady(); }
+    });
 
   const timer = new THREE.Timer();
   let t = 0;

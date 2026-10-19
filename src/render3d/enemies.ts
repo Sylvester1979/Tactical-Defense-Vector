@@ -1,6 +1,6 @@
 import * as THREE from 'three';
+import { loadModel } from './loader';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ENEMY_TYPES } from '../constants';
 import { makeHullDetail } from './textures';
 import { useAuthoredModels } from './towers';
@@ -161,8 +161,7 @@ export const HOVER: Record<EnemyKind, number> = { SCOUT: 3.2, INTERCEPTOR: 2.4, 
 
 export const loadEnemyModels = async () => {
   if (!useAuthoredModels()) return;
-  const loader = new GLTFLoader();
-  const results = await Promise.allSettled(KINDS.map(k => loader.loadAsync(`/models/${k.toLowerCase()}.glb`)));
+  const results = await Promise.allSettled(KINDS.map(k => loadModel(`/models/${k.toLowerCase()}.glb`)));
   results.forEach((r, i) => {
     if (r.status !== 'fulfilled') {
       console.warn(`enemy model ${KINDS[i]} not loaded, using procedural`, r.reason);

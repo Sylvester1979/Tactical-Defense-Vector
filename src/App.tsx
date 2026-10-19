@@ -55,6 +55,9 @@ export default function App() {
   } = useGame();
 
   const [placingType, setPlacingType] = useState<TowerType | null>(null);
+  // The 3D view reports when its models are loaded; until then a wave can't start
+  const [assetsReady, setAssetsReady] = useState(!use3D);
+  const onAssetsReady = React.useCallback(() => setAssetsReady(true), []);
   const [muted, setMutedState] = useState(isMuted);
   const toggleMute = React.useCallback(() => {
     setMutedState(m => { setMuted(!m); return !m; });
@@ -115,7 +118,7 @@ export default function App() {
         e.preventDefault();
         // Don't let a focused button also receive the Space activation
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        if (gameState.isWaveReady && !gameState.isGameOver) startWave();
+        if (gameState.isWaveReady && !gameState.isGameOver && assetsReady) startWave();
         return;
       case 'p':
         setGameState(s => ({ ...s, isPaused: !s.isPaused }));
@@ -221,7 +224,7 @@ export default function App() {
       <UIOverlay 
         gameState={gameState}
         towers={towers}
-        onStartWave={startWave}
+        onStartWave={() => { if (assetsReady) startWave(); }}
         onPauseToggle={() => setGameState(s => ({ ...s, isPaused: !s.isPaused }))}
         onRestart={restart}
         onCycleSpeed={cycleSpeed}
@@ -231,6 +234,7 @@ export default function App() {
         newRecord={newRecord}
         restoredFromSave={restoredFromSave}
         screenGrid={!use3D}
+        assetsReady={assetsReady}
         onUpgradeTower={upgradeTower}
         onSpecializeTower={specializeTower}
         onSellTower={sellTower}
@@ -242,7 +246,7 @@ export default function App() {
         setPlacingType={setPlacingType}
         renderCanvas={use3D ? (
           <React.Suspense fallback={<div style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }} className="bg-dark-bg" />}>
-            <GameView3D {...canvasProps} />
+            <GameView3D {...canvasProps} onReady={onAssetsReady} />
           </React.Suspense>
         ) : (
           <GameCanvas {...canvasProps} />

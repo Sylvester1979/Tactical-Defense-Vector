@@ -17,11 +17,18 @@ const distToSegment = (px: number, py: number, x1: number, y1: number, x2: numbe
   return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
 };
 
-export const GameView3D: React.FC<GameCanvasProps> = props => {
+interface GameView3DProps extends GameCanvasProps {
+  onReady?: () => void; // models loaded and warmed up
+}
+
+export const GameView3D: React.FC<GameView3DProps> = ({ onReady, ...props }) => {
   const { towers, placingType, relocatingTowerId, onCanvasClick } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const hudRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const [hoveredTowerId, setHoveredTowerId] = useState<string | null>(null);
   const [mouse, setMouse] = useState<Point | null>(null);
 
@@ -29,7 +36,11 @@ export const GameView3D: React.FC<GameCanvasProps> = props => {
   inputsRef.current = { ...props, hoveredTowerId, mouse: placingType || relocatingTowerId ? mouse : null };
 
   useEffect(() => {
-    const scene = createGameScene(hostRef.current!, hudRef.current!, () => inputsRef.current!, () => setReady(true));
+    const scene = createGameScene(
+      hostRef.current!, hudRef.current!, () => inputsRef.current!,
+      () => { setReady(true); onReadyRef.current?.(); },
+      setProgress,
+    );
     return () => scene.dispose();
   }, []);
 
@@ -76,8 +87,12 @@ export const GameView3D: React.FC<GameCanvasProps> = props => {
     >
       <canvas ref={hudRef} className="absolute inset-0 pointer-events-none" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, zIndex: 1 }} />
       {!ready && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 2 }}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none" style={{ zIndex: 2 }}>
           <span className="font-mono text-xs tracking-[0.3em] text-accent-cyan animate-pulse">LOADING DEFENSE GRID…</span>
+          <div className="w-64 h-1 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-full bg-accent-cyan shadow-[0_0_10px_#00f2ff] transition-[width] duration-200" style={{ width: `${Math.round(progress * 100)}%` }} />
+          </div>
+          <span className="font-mono text-[10px] text-white/40">{progress < 1 ? `${Math.round(progress * 100)}%` : 'PREPARING…'}</span>
         </div>
       )}
     </div>

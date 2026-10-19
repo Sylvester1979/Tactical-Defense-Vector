@@ -48,6 +48,8 @@ interface UIOverlayProps {
   restoredFromSave: boolean;
   // Flat screen-space grid over the arena; it suits the 2D renderer but not the 3D scene's perspective
   screenGrid: boolean;
+  // False while the 3D models are still loading: starting a wave waits for them
+  assetsReady: boolean;
 }
 
 const MODIFIER_STYLE: Record<WaveModifier, { label: string; color: string; desc: string }> = {
@@ -107,6 +109,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   newRecord,
   restoredFromSave,
   screenGrid,
+  assetsReady,
 }) => {
   const selectedTower = towers.find(t => t.id === gameState.selectedTowerId);
 
@@ -428,7 +431,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           <button
             onClick={onStartWave}
             title="Start wave (Space)"
-            disabled={gameState.isGameOver || !gameState.isWaveReady}
+            disabled={gameState.isGameOver || !gameState.isWaveReady || !assetsReady}
             className="relative h-9 pl-4 pr-5 rounded-xl font-black text-[11px] uppercase tracking-[0.14em] font-mono flex items-center gap-2 overflow-hidden transition-all disabled:opacity-35 disabled:cursor-not-allowed"
             style={gameState.isWaveReady && !gameState.isGameOver ? {
               background: 'linear-gradient(135deg, #ffb800 0%, #ff9200 100%)',
@@ -619,10 +622,11 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                       )}
                       <button
                         onClick={onStartWave}
-                        className="px-5 py-2.5 bg-accent-amber text-dark-bg font-black uppercase tracking-widest text-sm hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 rounded-md"
+                        disabled={!assetsReady}
+                        className="px-5 py-2.5 bg-accent-amber text-dark-bg font-black uppercase tracking-widest text-sm hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 rounded-md disabled:opacity-40 disabled:cursor-wait disabled:active:scale-100"
                       >
                         <Zap className="w-4 h-4 fill-current" />
-                        Initiate Wave {gameState.waveNumber + 1}
+                        {assetsReady ? `Initiate Wave ${gameState.waveNumber + 1}` : 'Loading assets…'}
                         <kbd className="ml-1 px-1.5 py-0.5 rounded border border-dark-bg/30 text-[9px] font-mono font-bold opacity-70">SPACE</kbd>
                       </button>
                     </div>

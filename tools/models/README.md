@@ -20,8 +20,13 @@ python3.13 -m venv .blender-venv          # bpy 5.2 needs Python 3.13
 ```bash
 .blender-venv/bin/python tools/models/build_vulcan.py out/
 # or: blender -b -P tools/models/build_vulcan.py -- out/
-cp out/vulcan.glb public/models/
+npm run optimize-models -- out/vulcan.glb public/models/
 ```
+
+`optimize-models` (`tools/models/optimize.mjs`, gltf-transform) prepares the glb for the web:
+Meshopt-compressed, quantized geometry and ORM maps scaled to 512px — about 55% smaller than
+Blender's export. The game's loader decodes Meshopt (`src/render3d/loader.ts`); a raw export also
+loads, it is just twice the download.
 
 Building also **weathers and bakes** the model (`bake.py`): worn edges, grime in crevices, streaks,
 dust on top surfaces and ambient occlusion are baked by Cycles into a colour map and an ORM map
