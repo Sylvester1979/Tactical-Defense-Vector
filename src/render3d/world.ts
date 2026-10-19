@@ -85,6 +85,38 @@ export const buildWorld = (scene: THREE.Scene) => {
     scene.add(j);
   });
 
+  // ── Direction chevrons on the road, with a pulse running towards the core ──
+  const chevron = new THREE.Shape();
+  chevron.moveTo(0.5, 0); chevron.lineTo(-0.2, 0.75); chevron.lineTo(-0.6, 0.75);
+  chevron.lineTo(0.1, 0); chevron.lineTo(-0.6, -0.75); chevron.lineTo(-0.2, -0.75); chevron.closePath();
+  const chevronGeo = new THREE.ShapeGeometry(chevron).rotateX(-Math.PI / 2);
+  const chevronSpots: { pos: THREE.Vector3; heading: number; along: number }[] = [];
+  let travelled = 0;
+  for (let i = 0; i < PATH.length - 1; i++) {
+    const a = toWorld(PATH[i].x, PATH[i].y), b = toWorld(PATH[i + 1].x, PATH[i + 1].y);
+    const len = a.distanceTo(b);
+    const heading = Math.atan2(-(b.z - a.z), b.x - a.x);
+    // Evenly spaced, kept clear of the corners
+    const n = Math.floor((len - 5) / 7);
+    for (let k = 0; k < n; k++) {
+      const d = 2.5 + (len - 5) * (k + 0.5) / n;
+      chevronSpots.push({ pos: a.clone().lerp(b, d / len).setY(ROAD_H + 0.02), heading, along: travelled + d });
+    }
+    travelled += len;
+  }
+  const chevrons = new THREE.InstancedMesh(chevronGeo, new THREE.MeshBasicMaterial({
+    color: '#ffffff', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+  }), chevronSpots.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
+  chevronSpots.forEach((c, i) => {
+    chevrons.setMatrixAt(i, m4.compose(c.pos, q.setFromAxisAngle(up, c.heading), one));
+    chevrons.setColorAt(i, new THREE.Color(0, 0, 0));
+  });
+  chevrons.renderOrder = 1;
+  scene.add(chevrons);
+  const chevronBase = new THREE.Color('#00e5ff');
+  const chevronColor = new THREE.Color();
+
   // ── Entry gate ──
   const gateAt = toWorld(PATH[0].x, PATH[0].y);
   const gate = new THREE.Group();
@@ -215,6 +247,13 @@ export const buildWorld = (scene: THREE.Scene) => {
       t += dt;
       // Energy flowing along the road towards the core
       flowMaps.forEach(m => { m.offset.y = -t * 0.35; });
+      // Chevrons glow faintly; a bright pulse sweeps along them every few seconds
+      chevronSpots.forEach((c, i) => {
+        const phase = ((t * 0.18 - c.along / travelled) % 1 + 1) % 1; // 0 at the pulse head, tail behind it
+        const pulse = Math.max(0, 1 - phase * 12) ** 2;
+        chevrons.setColorAt(i, chevronColor.copy(chevronBase).multiplyScalar(0.22 + pulse * 2.2));
+      });
+      chevrons.instanceColor!.needsUpdate = true;
       // Gate: field shimmer + a scan line sweeping up
       fieldMat.opacity = 0.14 + Math.sin(t * 3.1) * 0.04;
       const s = (t * 0.7) % 1;

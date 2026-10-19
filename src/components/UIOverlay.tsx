@@ -46,6 +46,8 @@ interface UIOverlayProps {
   bestWaves: number;
   newRecord: boolean;
   restoredFromSave: boolean;
+  // Flat screen-space grid over the arena; it suits the 2D renderer but not the 3D scene's perspective
+  screenGrid: boolean;
 }
 
 const MODIFIER_STYLE: Record<WaveModifier, { label: string; color: string; desc: string }> = {
@@ -103,7 +105,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   renderCanvas,
   bestWaves,
   newRecord,
-  restoredFromSave
+  restoredFromSave,
+  screenGrid,
 }) => {
   const selectedTower = towers.find(t => t.id === gameState.selectedTowerId);
 
@@ -516,11 +519,13 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             )}
 
             {/* Grid Overlay simulation */}
-            <div className="absolute inset-0 pointer-events-none grid grid-cols-[repeat(20,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] opacity-10">
-               {[...Array(300)].map((_, i) => (
-                 <div key={i} className="border-[0.5px] border-border-dim" />
-               ))}
-            </div>
+            {screenGrid && (
+              <div className="absolute inset-0 pointer-events-none grid grid-cols-[repeat(20,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] opacity-10">
+                 {[...Array(300)].map((_, i) => (
+                   <div key={i} className="border-[0.5px] border-border-dim" />
+                 ))}
+              </div>
+            )}
 
             {/* Core breach flash — red edges, stronger the more lives were lost */}
             <AnimatePresence>
@@ -577,9 +582,58 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               })()}
             </AnimatePresence>
 
+            {/* Wave cleared: a compact card along the top edge, so the field stays visible while building */}
+            <AnimatePresence>
+              {gameState.isWaveReady && !gameState.isGameOver && gameState.waveNumber > 0 && (() => {
+                const mod = getWaveConfig(gameState.waveNumber + 1).modifier;
+                return (
+                  <motion.div
+                    key="wave-cleared"
+                    className="absolute inset-x-0 top-3 flex justify-center pointer-events-none z-[60]"
+                    initial={{ opacity: 0, y: -14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -14 }}
+                    transition={{ duration: 0.3, ease: 'easeOut' }}
+                  >
+                    <div className="pointer-events-auto flex items-center gap-5 pl-5 pr-2.5 py-2.5 bg-[#0d1117]/85 backdrop-blur-md border border-accent-amber/50 rounded-lg shadow-[0_0_40px_rgba(255,191,0,0.12)] whitespace-nowrap">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] uppercase tracking-[0.45em] text-accent-amber font-black">Aegis Matrix Stable</span>
+                        <span className="text-2xl font-black text-white italic tracking-tighter leading-none mt-1">
+                          WAVE {gameState.waveNumber} CLEARED
+                        </span>
+                      </div>
+                      {newRecord && gameState.waveNumber === bestWaves && (
+                        <span className="px-2.5 py-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 text-[9px] font-black font-mono uppercase tracking-[0.25em]">
+                          ★ New record
+                        </span>
+                      )}
+                      {mod !== WaveModifier.NONE && (
+                        <div className={`px-3 py-1 border rounded-md flex flex-col items-center leading-tight ${
+                          mod === WaveModifier.RUSH  ? 'border-accent-amber/40 bg-accent-amber/5' :
+                          mod === WaveModifier.SWARM ? 'border-accent-red/40 bg-accent-red/5' :
+                          'border-purple-400/40 bg-purple-400/5'
+                        }`}>
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${MODIFIER_STYLE[mod].color}`}>⚠ {MODIFIER_STYLE[mod].label} incoming</span>
+                          <span className={`text-[9px] font-mono ${MODIFIER_STYLE[mod].color} opacity-70`}>{MODIFIER_STYLE[mod].desc}</span>
+                        </div>
+                      )}
+                      <button
+                        onClick={onStartWave}
+                        className="px-5 py-2.5 bg-accent-amber text-dark-bg font-black uppercase tracking-widest text-sm hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 rounded-md"
+                      >
+                        <Zap className="w-4 h-4 fill-current" />
+                        Initiate Wave {gameState.waveNumber + 1}
+                        <kbd className="ml-1 px-1.5 py-0.5 rounded border border-dark-bg/30 text-[9px] font-mono font-bold opacity-70">SPACE</kbd>
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })()}
+            </AnimatePresence>
+
             {/* Placement Indicator Overlay */}
             {placingType && (
-              <div className="absolute top-2 left-2 bg-accent-cyan/10 border border-accent-cyan p-2 text-[10px] uppercase tracking-tighter text-accent-cyan font-mono animate-pulse">
+              <div className="absolute bottom-2 left-2 bg-accent-cyan/10 border border-accent-cyan p-2 text-[10px] uppercase tracking-tighter text-accent-cyan font-mono animate-pulse">
                 Placing: {TOWER_STATS[placingType].name} | ESC to Cancel
               </div>
             )}
@@ -883,63 +937,6 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 
       {/* OVERLAYS */}
       <AnimatePresence>
-        {gameState.isWaveReady && !gameState.isGameOver && gameState.waveNumber > 0 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.05 }}
-            className="absolute inset-x-0 top-1/2 -translate-y-1/2 z-[500] flex flex-col items-center justify-center p-12 bg-[#0d1117]/80 backdrop-blur-md border-y-2 border-accent-amber shadow-[0_0_100px_rgba(255,191,0,0.15)]"
-          >
-            {/* Static accent lines — top and bottom */}
-            <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-amber to-transparent opacity-50" />
-            <div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-amber to-transparent opacity-50" />
-
-            <div className="flex flex-col items-center max-w-xl text-center">
-              <span className="text-[10px] uppercase tracking-[0.5em] text-accent-amber mb-4 font-black">
-                Aegis Matrix Stable
-              </span>
-              <h2 className="text-6xl font-black text-white italic tracking-tighter mb-2">
-                WAVE {gameState.waveNumber} CLEARED
-              </h2>
-              {newRecord && gameState.waveNumber === bestWaves && (
-                <span className="mb-3 px-3 py-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 text-[10px] font-black font-mono uppercase tracking-[0.3em]">
-                  ★ New record
-                </span>
-              )}
-              <p className="text-text-secondary font-mono text-sm leading-relaxed mb-8">
-                Defensive protocols verified. Threat level currently neutralized. 
-                Prepare resources and authorize the initiation of the next encounter cycle.
-              </p>
-              
-              {(() => {
-                const mod = getWaveConfig(gameState.waveNumber + 1).modifier;
-                if (mod === WaveModifier.NONE) return null;
-                const m = MODIFIER_STYLE[mod];
-                return (
-                  <div className={`mb-4 px-5 py-2 border rounded-lg flex flex-col items-center gap-0.5 ${
-                    mod === WaveModifier.RUSH  ? 'border-accent-amber/40 bg-accent-amber/5' :
-                    mod === WaveModifier.SWARM ? 'border-accent-red/40 bg-accent-red/5' :
-                    'border-purple-400/40 bg-purple-400/5'
-                  }`}>
-                    <span className={`text-xs font-black uppercase tracking-widest ${m.color}`}>⚠ {m.label} WAVE INCOMING</span>
-                    <span className={`text-[10px] font-mono ${m.color} opacity-70`}>{m.desc}</span>
-                  </div>
-                );
-              })()}
-              <div className="flex gap-4">
-                <button
-                  onClick={onStartWave}
-                  className="group relative px-10 py-3 bg-accent-amber text-dark-bg font-black uppercase tracking-widest text-lg hover:brightness-110 active:scale-95 transition-all flex items-center gap-3"
-                >
-                  <Zap className="w-5 h-5 fill-current" />
-                  Initiate Wave {gameState.waveNumber + 1}
-                </button>
-              </div>
-            </div>
-            
-          </motion.div>
-        )}
-
         {gameState.isGameOver && (
           <motion.div 
             initial={{ opacity: 0 }}
