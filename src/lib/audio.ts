@@ -1,6 +1,8 @@
-// Procedural sound effects on the Web Audio API — every sound is synthesized from oscillators
-// and filtered noise, so the game ships no audio files. Voices take any BaseAudioContext, so the
-// same definitions can also be rendered offline.
+// Sound effects on the Web Audio API. Recorded samples come first: public/audio/manifest.json
+// lists the files for each sound (several variants each), played with slight random pitch and
+// level so repeats don't sound mechanical, and sent into a hangar-like reverb. Any sound without
+// samples falls back to the procedural voice below (oscillators and filtered noise), so the game
+// is never silent. Voices take any BaseAudioContext, so they can also be rendered offline.
 
 export type SoundName =
   | 'vulcan' | 'vulcanHeavy' | 'railgun' | 'railgunHyper' | 'mortar' | 'cryoLaunch'
@@ -215,10 +217,59 @@ export const createMasterBus = (ac: BaseAudioContext, level = MASTER_LEVEL) => {
   return gain;
 };
 
+// ── Samples ───────────────────────────────────────────────────────────────
+
+// public/audio/manifest.json: { "<sound>": { files: [...], gain?, pitch?, reverb? }, "ambience"?: {...} }
+interface SampleDef { files: string[]; gain?: number; pitch?: number; reverb?: number }
+interface SampleSet { buffers: AudioBuffer[]; gain: number; pitch: number; reverb: number; lastIndex: number }
+const AUDIO_BASE = `${import.meta.env.BASE_URL}audio/`;
+const samples = new Map<string, SampleSet>();
+
+const loadSamples = async (ac: AudioContext) => {
+  let manifest: Record<string, SampleDef>;
+  try {
+    const res = await fetch(`${AUDIO_BASE}manifest.json`);
+    if (!res.ok) return;
+    manifest = await res.json();
+  } catch {
+    return; // no sample pack: procedural voices only
+  }
+  await Promise.all(Object.entries(manifest).map(async ([name, def]) => {
+    const decoded = await Promise.all(def.files.map(file => fetch(`${AUDIO_BASE}${file}`)
+      .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${file}: ${r.status}`))))
+      .then(data => ac.decodeAudioData(data))
+      .catch(err => { console.warn('sound sample failed to load', err); return null; })));
+    const buffers = decoded.filter((b): b is AudioBuffer => b !== null);
+    if (buffers.length) samples.set(name, { buffers, gain: def.gain ?? 1, pitch: def.pitch ?? 0.05, reverb: def.reverb ?? 0.2, lastIndex: -1 });
+  }));
+  startAmbience();
+};
+
+// Hangar reverb: an impulse response of stereo noise decaying over ~1.8 s, darker as it fades
+const createReverb = (ac: BaseAudioContext) => {
+  const seconds = 1.8, rate = ac.sampleRate, len = Math.floor(seconds * rate);
+  const ir = ac.createBuffer(2, len, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / len;
+      const k = 0.55 + 0.4 * t; // stronger smoothing later on = high frequencies die first
+      lp = lp * k + (Math.random() * 2 - 1) * (1 - k);
+      d[i] = lp * Math.pow(1 - t, 2.6) * 2.2;
+    }
+  }
+  const conv = ac.createConvolver();
+  conv.buffer = ir;
+  return conv;
+};
+
 // ── Live engine ───────────────────────────────────────────────────────────
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
+let reverbSend: GainNode | null = null;
+let ambience: AudioBufferSourceNode | null = null;
 let activeVoices = 0;
 const lastPlayed = new Map<SoundName, number>();
 let muted = (() => {
@@ -231,7 +282,24 @@ const ensureContext = () => {
   if (!Ctor) return null;
   ctx = new Ctor();
   master = createMasterBus(ctx, muted ? 0 : MASTER_LEVEL);
+  reverbSend = ctx.createGain();
+  reverbSend.connect(createReverb(ctx)).connect(master);
+  void loadSamples(ctx);
   return ctx;
+};
+
+// Low background hum of the base, looped under everything (if the pack has one)
+const startAmbience = () => {
+  const set = samples.get('ambience');
+  if (!ctx || !master || !set || ambience) return;
+  ambience = ctx.createBufferSource();
+  ambience.buffer = set.buffers[0];
+  ambience.loop = true;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(set.gain, ctx.currentTime + 3);
+  ambience.connect(g).connect(master);
+  ambience.start();
 };
 
 // Browsers only allow audio after a user gesture: call this from input handlers
@@ -248,6 +316,32 @@ export const setMuted = (m: boolean) => {
   if (master && ctx) master.gain.setTargetAtTime(m ? 0 : MASTER_LEVEL, ctx.currentTime, 0.03);
 };
 
+// One sample variant (never the same one twice in a row), with a little pitch and level spread
+const playSample = (ac: AudioContext, set: SampleSet, pan: number) => {
+  let index = Math.floor(Math.random() * set.buffers.length);
+  if (set.buffers.length > 1 && index === set.lastIndex) index = (index + 1) % set.buffers.length;
+  set.lastIndex = index;
+  const src = ac.createBufferSource();
+  src.buffer = set.buffers[index];
+  src.playbackRate.value = 1 + (Math.random() * 2 - 1) * set.pitch;
+  const g = ac.createGain();
+  g.gain.value = set.gain * (0.85 + Math.random() * 0.15);
+  let node: AudioNode = src.connect(g);
+  if (pan !== 0) {
+    const p = ac.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    node = node.connect(p);
+  }
+  node.connect(master!);
+  if (set.reverb > 0 && reverbSend) {
+    const send = ac.createGain();
+    send.gain.value = set.reverb;
+    node.connect(send).connect(reverbSend);
+  }
+  src.start(ac.currentTime + 0.005);
+  return src.buffer.duration / src.playbackRate.value;
+};
+
 // Fire-and-forget; `pan` is -1 (left) … 1 (right)
 export const playSound = (name: SoundName, pan = 0) => {
   if (muted || !ctx || !master || ctx.state !== 'running') return;
@@ -256,6 +350,7 @@ export const playSound = (name: SoundName, pan = 0) => {
   if (activeVoices >= MAX_VOICES) return;
   lastPlayed.set(name, now);
   activeVoices++;
-  const dur = renderSound(ctx, master, name, ctx.currentTime + 0.005, pan);
+  const set = samples.get(name);
+  const dur = set ? playSample(ctx, set, pan) : renderSound(ctx, master, name, ctx.currentTime + 0.005, pan);
   window.setTimeout(() => { activeVoices--; }, (dur + 0.05) * 1000);
 };
