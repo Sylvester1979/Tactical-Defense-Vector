@@ -59,6 +59,18 @@ The renderer lowers its own quality (ambient occlusion first, then resolution) o
 npm run dev      # then open http://localhost:3000/prototype.html?zoom=3&x=-6&z=-10
 ```
 
+## Sound
+
+Sound effects are recorded CC0 samples (Kenney, OpenGameArt — see `public/audio/CREDITS.md`),
+shaped into game sounds by `tools/audio/build_sfx.py`: sliced, layered, re-pitched and given
+several variants each. The game plays a random variant with a little pitch spread through a
+hangar reverb; any sound without samples falls back to a procedural voice.
+
+```bash
+tools/audio/fetch_sources.sh /tmp/sfx-src            # download the CC0 source packs
+python3 tools/audio/build_sfx.py /tmp/sfx-src public/audio
+```
+
 ## Project layout
 
 - `src/hooks/useGame.ts` — simulation loop (spawning, movement, projectiles, economy)

@@ -1,0 +1,211 @@
+{
+ "vulcan": {
+  "files": [
+   "vulcan_0.mp3",
+   "vulcan_1.mp3",
+   "vulcan_2.mp3",
+   "vulcan_3.mp3",
+   "vulcan_4.mp3"
+  ],
+  "gain": 0.32,
+  "pitch": 0.06,
+  "reverb": 0.12
+ },
+ "vulcanHeavy": {
+  "files": [
+   "vulcanHeavy_0.mp3",
+   "vulcanHeavy_1.mp3",
+   "vulcanHeavy_2.mp3",
+   "vulcanHeavy_3.mp3"
+  ],
+  "gain": 0.42,
+  "pitch": 0.05,
+  "reverb": 0.15
+ },
+ "railgun": {
+  "files": [
+   "railgun_0.mp3",
+   "railgun_1.mp3",
+   "railgun_2.mp3"
+  ],
+  "gain": 0.5,
+  "pitch": 0.04,
+  "reverb": 0.25
+ },
+ "railgunHyper": {
+  "files": [
+   "railgunHyper_0.mp3",
+   "railgunHyper_1.mp3",
+   "railgunHyper_2.mp3"
+  ],
+  "gain": 0.62,
+  "pitch": 0.03,
+  "reverb": 0.3
+ },
+ "mortar": {
+  "files": [
+   "mortar_0.mp3",
+   "mortar_1.mp3",
+   "mortar_2.mp3",
+   "mortar_3.mp3"
+  ],
+  "gain": 0.55,
+  "pitch": 0.05,
+  "reverb": 0.2
+ },
+ "cryoLaunch": {
+  "files": [
+   "cryoLaunch_0.mp3",
+   "cryoLaunch_1.mp3",
+   "cryoLaunch_2.mp3"
+  ],
+  "gain": 0.55,
+  "pitch": 0.05,
+  "reverb": 0.2
+ },
+ "explosion": {
+  "files": [
+   "explosion_0.mp3",
+   "explosion_1.mp3",
+   "explosion_2.mp3",
+   "explosion_3.mp3",
+   "explosion_4.mp3"
+  ],
+  "gain": 0.5,
+  "pitch": 0.06,
+  "reverb": 0.3
+ },
+ "freeze": {
+  "files": [
+   "freeze_0.mp3",
+   "freeze_1.mp3",
+   "freeze_2.mp3",
+   "freeze_3.mp3"
+  ],
+  "gain": 0.45,
+  "pitch": 0.06,
+  "reverb": 0.3
+ },
+ "death": {
+  "files": [
+   "death_0.mp3",
+   "death_1.mp3",
+   "death_2.mp3",
+   "death_3.mp3",
+   "death_4.mp3"
+  ],
+  "gain": 0.38,
+  "pitch": 0.08,
+  "reverb": 0.2
+ },
+ "deathBoss": {
+  "files": [
+   "deathBoss_0.mp3",
+   "deathBoss_1.mp3"
+  ],
+  "gain": 0.62,
+  "pitch": 0.02,
+  "reverb": 0.4
+ },
+ "leak": {
+  "files": [
+   "leak_0.mp3",
+   "leak_1.mp3"
+  ],
+  "gain": 0.8,
+  "pitch": 0.0,
+  "reverb": 0.3
+ },
+ "waveStart": {
+  "files": [
+   "waveStart_0.mp3",
+   "waveStart_1.mp3"
+  ],
+  "gain": 0.75,
+  "pitch": 0.0,
+  "reverb": 0.25
+ },
+ "bossWarn": {
+  "files": [
+   "bossWarn_0.mp3"
+  ],
+  "gain": 0.6,
+  "pitch": 0.0,
+  "reverb": 0.3
+ },
+ "waveClear": {
+  "files": [
+   "waveClear_0.mp3",
+   "waveClear_1.mp3"
+  ],
+  "gain": 0.6,
+  "pitch": 0.0,
+  "reverb": 0.2
+ },
+ "gameOver": {
+  "files": [
+   "gameOver_0.mp3"
+  ],
+  "gain": 0.68,
+  "pitch": 0.0,
+  "reverb": 0.35
+ },
+ "place": {
+  "files": [
+   "place_0.mp3",
+   "place_1.mp3",
+   "place_2.mp3",
+   "place_3.mp3"
+  ],
+  "gain": 0.6,
+  "pitch": 0.04,
+  "reverb": 0.15
+ },
+ "upgrade": {
+  "files": [
+   "upgrade_0.mp3",
+   "upgrade_1.mp3",
+   "upgrade_2.mp3"
+  ],
+  "gain": 0.55,
+  "pitch": 0.02,
+  "reverb": 0.1
+ },
+ "specialize": {
+  "files": [
+   "specialize_0.mp3",
+   "specialize_1.mp3"
+  ],
+  "gain": 0.65,
+  "pitch": 0.0,
+  "reverb": 0.2
+ },
+ "sell": {
+  "files": [
+   "sell_0.mp3",
+   "sell_1.mp3",
+   "sell_2.mp3"
+  ],
+  "gain": 0.55,
+  "pitch": 0.03,
+  "reverb": 0.1
+ },
+ "error": {
+  "files": [
+   "error_0.mp3",
+   "error_1.mp3",
+   "error_2.mp3"
+  ],
+  "gain": 0.5,
+  "pitch": 0.0,
+  "reverb": 0.0
+ },
+ "ambience": {
+  "files": [
+   "ambience_0.mp3"
+  ],
+  "gain": 0.22,
+  "pitch": 0.0,
+  "reverb": 0.0
+ }
+}
