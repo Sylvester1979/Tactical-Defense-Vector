@@ -43,6 +43,9 @@ const CORE_LABEL = CORE.clone().setY(12.4);
 
 // Rough top of each hull above its origin, for health bars
 const HULL_TOP: Record<string, number> = { SCOUT: 0.8, INTERCEPTOR: 0.7, PHANTOM: 0.9, GUARDIAN: 2.7, COLOSSUS: 4.2 };
+// Enemies are drawn larger than life so they stay readable at the full-field zoom; the small,
+// fast flyers get the biggest boost
+const ENEMY_SCALE: Record<string, number> = { SCOUT: 1.3, INTERCEPTOR: 1.35, PHANTOM: 1.25, GUARDIAN: 1.2, COLOSSUS: 1.1 };
 
 const hdr = (c: THREE.ColorRepresentation, k: number) => new THREE.Color(c).multiplyScalar(k);
 const additive = (color: THREE.ColorRepresentation, opacity = 1) =>
@@ -228,7 +231,10 @@ export const createGameScene = (
   // ── Enemies ──
   const createEnemy = (e: EnemyInstance): EnemyView => {
     const model = buildEnemy(e.type);
-    const size = (ENEMY_TYPES[e.type]?.size ?? 14) / UNIT;
+    const scale = ENEMY_SCALE[e.type] ?? 1.25;
+    model.root.scale.setScalar(scale);
+    // Status effects are sized in world units, so they're set against the model's scale
+    const size = (ENEMY_TYPES[e.type]?.size ?? 14) / UNIT / scale;
     const halo = new THREE.Mesh(haloGeo, additive(hdr('#ffffff', 1.4), 0));
     halo.material.userData.perInstance = true;
     halo.scale.setScalar(size * 0.75);
@@ -268,7 +274,7 @@ export const createGameScene = (
       view.model.root.updateMatrixWorld(true);
       view.model.muzzles[0].getWorldPosition(muzzleWorld);
       offset.copy(muzzleWorld).sub(start);
-      fx.muzzleFlash(muzzleWorld, color, fam === 'mortar' ? 0.75 : fam === 'railgun' ? 0.5 : 0.32);
+      fx.muzzleFlash(muzzleWorld, color, fam === 'mortar' ? 0.42 : fam === 'railgun' ? 0.5 : 0.32);
       if (fam === 'railgun') fx.beam(muzzleWorld, toWorld(p.targetX, p.targetY, p.targetZ + 8), color);
     }
     const geo = fam === 'mortar' ? shellGeo : fam === 'railgun' ? boltGeo : tracerGeo;
@@ -426,7 +432,8 @@ export const createGameScene = (
       }
       view.kick = Math.max(0, view.kick - dt * 6);
       m.recoil.position.x = -view.kick * (m.family === 'mortar' ? 0.5 : 0.25);
-      m.band.emissiveIntensity = 3 + view.kick * 6;
+      // The mortar's glow covers its bore and shell rack; a full pulse there bloomed into a red blob
+      m.band.emissiveIntensity = 3 + view.kick * (m.family === 'mortar' ? 1.5 : 6);
       if (m.spin) m.spin.rotation.x += dt * (tw.targetId ? 32 : 1.5);
       const relocating = inputs.relocatingTowerId === tw.id;
       (view.pool.material as THREE.MeshBasicMaterial).opacity = relocating ? 0.3 : 1;
@@ -459,7 +466,7 @@ export const createGameScene = (
       view.halo.visible = view.flash > 0;
       view.halo.material.opacity = (view.flash / 0.12) * 0.3;
       view.frost.visible = e.slowDuration > 0;
-      if (view.frost.visible) { view.frost.rotation.y += dt * 2; view.frost.position.y = -view.model.hover * 0.5 + 0.2; }
+      if (view.frost.visible) { view.frost.rotation.y += dt * 2; view.frost.position.y = (-view.model.hover * 0.5 + 0.2) / root.scale.x; }
       view.burn.visible = e.burnDuration > 0;
       if (view.burn.visible) view.burn.material.opacity = 0.15 + Math.random() * 0.15;
     }
@@ -587,7 +594,7 @@ export const createGameScene = (
       if (!boss && since > 2500) continue;
       const alpha = boss ? 1 : Math.min(1, (2500 - since) / 500);
       const top = view.model.root.position.clone();
-      top.y += (HULL_TOP[e.type] ?? 1) + 0.6;
+      top.y += (HULL_TOP[e.type] ?? 1) * (ENEMY_SCALE[e.type] ?? 1.25) + 0.6;
       const s = project(top);
       const w = boss ? 60 : 26, h = boss ? 5 : 3.5;
       const f = Math.max(0, e.health / e.maxHealth);
