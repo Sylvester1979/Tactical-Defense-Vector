@@ -1,6 +1,6 @@
 import * as THREE from 'three';
+import { loadModel } from './loader';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { TowerType } from '../types';
 import { TOWER_STATS } from '../constants';
 import { makeHullDetail } from './textures';
@@ -198,10 +198,9 @@ export const useAuthoredModels = () => new URLSearchParams(location.search).get(
 
 export const loadTowerModels = async () => {
   if (!useAuthoredModels()) return;
-  const loader = new GLTFLoader();
   const families: TowerModel['family'][] = ['vulcan', 'railgun', 'mortar'];
   // A model that fails to load falls back to its procedural version
-  const results = await Promise.allSettled(families.map(f => loader.loadAsync(`/models/${f}.glb`)));
+  const results = await Promise.allSettled(families.map(f => loadModel(`/models/${f}.glb`)));
   results.forEach((r, i) => {
     if (r.status === 'fulfilled') templates[families[i]] = r.value.scene;
     else console.warn(`tower model ${families[i]} not loaded, using procedural`, r.reason);
