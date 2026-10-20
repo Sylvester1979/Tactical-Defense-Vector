@@ -216,8 +216,9 @@ export default function App() {
     onCanvasClick: handleCanvasClick,
   };
 
+  // Damage shake: the 2D view shakes the whole page; the 3D view shakes only its camera
   return (
-    <div className={`min-h-screen bg-dark-bg flex flex-col overflow-hidden font-sans relative ${gameState.shakeTime > 0 ? 'jitter-effect' : ''}`}>
+    <div className={`min-h-screen bg-dark-bg flex flex-col overflow-hidden font-sans relative ${gameState.shakeTime > 0 && !use3D ? 'jitter-effect' : ''}`}>
       
       <UIOverlay 
         gameState={gameState}
