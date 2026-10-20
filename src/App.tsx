@@ -218,8 +218,6 @@ export default function App() {
 
   return (
     <div className={`min-h-screen bg-dark-bg flex flex-col overflow-hidden font-sans relative ${gameState.shakeTime > 0 ? 'jitter-effect' : ''}`}>
-      <div className="crt-overlay" />
-      <div className="scanner-line" />
       
       <UIOverlay 
         gameState={gameState}
