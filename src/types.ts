@@ -49,6 +49,7 @@ export interface TowerStats {
   description: string;
   splashRadius?: number;
   isPiercing?: boolean;
+  armorPiercing?: boolean; // resistances (multipliers below 1) don't reduce its damage
   slowEffect?: number; // 0 to 1, percentage reduction
   burnDamage?: number; // Damage per second
   burnDuration?: number;
@@ -112,6 +113,7 @@ export interface Projectile {
   type: TowerType;
   splashRadius?: number;
   isPiercing?: boolean;
+  armorPiercing?: boolean;
   slowEffect?: number;
   burnDamage?: number;
   burnDuration?: number;

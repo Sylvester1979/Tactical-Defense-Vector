@@ -10,8 +10,9 @@ import {
   X
 } from 'lucide-react';
 import { TowerInstance, GameState, TowerType, TargetingMode, DamageType } from '../types';
-import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT, getSellValue } from '../constants';
+import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT, getSellValue, getUpgradeCost, getMaxLevel, isBaseTower } from '../constants';
 import { toIso } from '../lib/iso';
+import { towerDamage } from '../game/sim';
 
 interface TowerModuleProps {
   tower: TowerInstance;
@@ -53,7 +54,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   const stats = TOWER_STATS[tower.type];
   const towerH = 40 + tower.level * 2;
   const screenPos = toIso(tower.x, tower.y, towerH + 15);
-  const upgradeCost = Math.floor(stats.cost * 0.7 * tower.level);
+  const upgradeCost = getUpgradeCost(tower.type, tower.level);
 
   const MODULE_WIDTH = 280;
   const MODULE_HEIGHT_APPROX = 300;
@@ -65,7 +66,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
     : screenPos.y;
   
   // Specialization Logic
-  const isBaseType = [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH].includes(tower.type);
+  const isBaseType = isBaseTower(tower.type);
   const isSpecialized = !isBaseType;
   const showSpecialization = tower.level >= 3 && isBaseType;
   
@@ -147,6 +148,11 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                       PIERCE
                     </span>
                   )}
+                  {stats.armorPiercing && (
+                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
+                      ARMOUR-PIERCING
+                    </span>
+                  )}
                   {stats.slowEffect && (
                     <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-cyan-500/10 border-cyan-500/20 text-cyan-400/70">
                       SLOW {stats.slowEffect * 100}%
@@ -154,7 +160,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                   )}
                   {stats.burnDamage && (
                     <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-orange-500/10 border-orange-500/20 text-orange-400/70">
-                      BURN {stats.burnDamage}/s·{stats.burnDuration}s
+                      BURN {Math.round(stats.burnDamage * towerDamage(tower) / stats.damage)}/s·{stats.burnDuration}s
                     </span>
                   )}
                 </div>
@@ -208,7 +214,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
 
               {/* Progress Level */}
               {(() => {
-                const maxLevel = isBaseType ? 3 : 5;
+                const maxLevel = getMaxLevel(tower.type);
                 const atCap = tower.level >= maxLevel;
                 const capLabel = isBaseType && atCap ? 'SPEC READY' : isSpecialized && atCap ? 'MAXED' : `${tower.level}/${maxLevel}`;
                 return (

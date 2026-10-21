@@ -75,8 +75,11 @@ export const flightProgress = (p: Projectile, remaining: number) => {
 export const towerRange = (tower: Pick<TowerInstance, 'type' | 'level'>) =>
   TOWER_STATS[tower.type].range * (1 + (tower.level - 1) * 0.1);
 
+// Damage (direct hit and burn) grows 45% per level
+const levelScale = (level: number) => 1 + (level - 1) * 0.45;
+
 export const towerDamage = (tower: Pick<TowerInstance, 'type' | 'level'>) =>
-  TOWER_STATS[tower.type].damage * (1 + (tower.level - 1) * 0.45);
+  TOWER_STATS[tower.type].damage * levelScale(tower.level);
 
 export const selectTarget = (inRange: EnemyInstance[], mode: TargetingMode, tower: TowerInstance): EnemyInstance | undefined => {
   if (inRange.length === 0) return undefined;
@@ -206,7 +209,8 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
       if (p.splashRadius) ev.sound(p.slowEffect ? 'freeze' : 'explosion', hitX, hitY);
 
       const processHit = (e: EnemyInstance, dmg: number) => {
-        const resistance = ENEMY_TYPES[e.type].resistances?.[p.damageType] ?? 1;
+        const res = ENEMY_TYPES[e.type].resistances?.[p.damageType] ?? 1;
+        const resistance = p.armorPiercing ? Math.max(1, res) : res;
         const next = { ...e, health: e.health - dmg * resistance, lastHitTime: now, hitAngle: Math.atan2(e.y - p.y, e.x - p.x) };
         if (p.slowEffect) {
           next.slowDuration = 2.0;
@@ -312,8 +316,9 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
         type: tower.type,
         splashRadius: stats.splashRadius,
         isPiercing: stats.isPiercing,
+        armorPiercing: stats.armorPiercing,
         slowEffect: stats.slowEffect,
-        burnDamage: stats.burnDamage,
+        burnDamage: stats.burnDamage && stats.burnDamage * levelScale(tower.level),
         burnDuration: stats.burnDuration,
         progress: 0,
         hitEnemyIds: [],
