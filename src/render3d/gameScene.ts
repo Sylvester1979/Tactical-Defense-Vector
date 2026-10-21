@@ -9,7 +9,7 @@ import { buildGhost, buildTower, loadTowerModels, TowerModel } from './towers';
 import { buildEnemy, EnemyModel, loadEnemyModels } from './enemies';
 import { createFx } from './fx';
 import { onLoadProgress } from './loader';
-import { toWorld, ROAD_H, UNIT, FIELD_W, FIELD_D } from './coords';
+import { toWorld, ROAD_H, ROAD_W, UNIT, FIELD_W, FIELD_D } from './coords';
 
 // The game rendered in WebGL. Each frame it reads the current game state and brings the scene in
 // line with it: models are created, moved, animated and retired by entity id. The camera is set up
@@ -50,6 +50,34 @@ const ENEMY_SCALE: Record<string, number> = { SCOUT: 1.3, INTERCEPTOR: 1.35, PHA
 const hdr = (c: THREE.ColorRepresentation, k: number) => new THREE.Color(c).multiplyScalar(k);
 const additive = (color: THREE.ColorRepresentation, opacity = 1) =>
   new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
+
+// The road as capsules in world XZ (segment ends; the joints round the corners off)
+const ROAD_SEGS = PATH.slice(1).map((p, i) => {
+  const a = toWorld(PATH[i].x, PATH[i].y), b = toWorld(p.x, p.y);
+  return new THREE.Vector4(a.x, a.z, b.x, b.z);
+});
+
+// Additive overlay drawn only where it lies over the road
+const roadMasked = (color: THREE.ColorRepresentation, opacity = 1) => {
+  const m = additive(color, opacity);
+  m.onBeforeCompile = shader => {
+    shader.uniforms.uRoadSegs = { value: ROAD_SEGS };
+    shader.uniforms.uRoadHalf = { value: ROAD_W / 2 };
+    shader.vertexShader = 'varying vec2 vRoadXZ;\n' + shader.vertexShader.replace(
+      '#include <project_vertex>',
+      '#include <project_vertex>\n  vRoadXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    shader.fragmentShader = `varying vec2 vRoadXZ;\nuniform vec4 uRoadSegs[${ROAD_SEGS.length}];\nuniform float uRoadHalf;\n` +
+      shader.fragmentShader.replace('void main() {', `void main() {
+  float dRoad = 1e9;
+  for (int i = 0; i < ${ROAD_SEGS.length}; i++) {
+    vec2 a = uRoadSegs[i].xy, ab = uRoadSegs[i].zw - a;
+    float h = clamp(dot(vRoadXZ - a, ab) / dot(ab, ab), 0.0, 1.0);
+    dRoad = min(dRoad, length(vRoadXZ - a - ab * h));
+  }
+  if (dRoad > uRoadHalf) discard;`);
+  };
+  return m;
+};
 
 const radialTexture = (() => {
   let tex: THREE.CanvasTexture | null = null;
@@ -126,15 +154,37 @@ export const createGameScene = (
   const projectiles = new Map<string, ProjectileView>();
 
   // ── Overlays on the deck: range, selection, placement grid, ghost ──
-  const rangeFill = new THREE.Mesh(discGeo, additive('#ffffff', 0.06));
-  const rangeEdge = new THREE.Mesh(ringGeo, additive('#ffffff', 0.55));
-  const range = new THREE.Group();
-  range.add(rangeFill, rangeEdge);
-  range.visible = false;
-  scene.add(range);
-  const hoverRange = new THREE.Mesh(ringGeo, additive('#ffffff', 0.25));
-  hoverRange.visible = false;
-  scene.add(hoverRange);
+  // A tower's reach, drawn on the deck and again on top of the raised road, which would otherwise
+  // hide it right where the enemies walk. The road copy is brighter: that's the part that matters.
+  const makeRange = (deckFill: number, deckEdge: number, roadFill: number, roadEdge: number) => {
+    const group = new THREE.Group();
+    const fills: THREE.MeshBasicMaterial[] = [], edges: THREE.MeshBasicMaterial[] = [];
+    const layer = (geo: THREE.BufferGeometry, mat: THREE.MeshBasicMaterial, y: number, into: THREE.MeshBasicMaterial[]) => {
+      if (mat.opacity <= 0) return;
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = y;
+      group.add(mesh);
+      into.push(mat);
+    };
+    layer(discGeo, additive('#ffffff', deckFill), 0.04, fills);
+    layer(ringGeo, additive('#ffffff', deckEdge), 0.05, edges);
+    layer(discGeo, roadMasked('#ffffff', roadFill), ROAD_H + 0.02, fills);
+    layer(ringGeo, roadMasked('#ffffff', roadEdge), ROAD_H + 0.03, edges);
+    group.visible = false;
+    scene.add(group);
+    return {
+      show(x: number, y: number, radius: number, color: string) {
+        group.visible = true;
+        group.position.copy(toWorld(x, y));
+        group.scale.set(radius / UNIT, 1, radius / UNIT); // flat: keep the layers' heights
+        fills.forEach(m => m.color.copy(hdr(color, 1)));
+        edges.forEach(m => m.color.copy(hdr(color, 1.4)));
+      },
+      hide() { group.visible = false; },
+    };
+  };
+  const range = makeRange(0.06, 0.55, 0.16, 0.95);
+  const hoverRange = makeRange(0, 0.25, 0.06, 0.5);
   const selectRing = new THREE.Mesh(new THREE.RingGeometry(2.75, 2.95, 64).rotateX(-Math.PI / 2), additive('#ffffff', 0.9));
   selectRing.visible = false;
   scene.add(selectRing);
@@ -313,7 +363,12 @@ export const createGameScene = (
     }
     for (const kind of Object.keys(ENEMY_TYPES)) stash.add(buildEnemy(kind).root);
     scene.add(stash);
+    // Range overlays only compile while visible
+    range.show(500, 400, 100, '#ffffff');
+    hoverRange.show(500, 400, 100, '#ffffff');
     await stage.renderer.compileAsync(scene, camera);
+    range.hide();
+    hoverRange.hide();
     stash.traverse(o => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -537,22 +592,16 @@ export const createGameScene = (
     // Range of the selected tower, and a lighter ring for the one under the cursor
     if (selected) {
       const color = TOWER_STATS[selected.type].color;
-      range.visible = selectRing.visible = true;
-      range.position.copy(toWorld(selected.x, selected.y)).setY(0.04);
-      range.scale.setScalar(towerRange(selected.type, selected.level) / UNIT);
-      (rangeFill.material as THREE.MeshBasicMaterial).color.copy(hdr(color, 1));
-      (rangeEdge.material as THREE.MeshBasicMaterial).color.copy(hdr(color, 1.4));
-      selectRing.position.copy(range.position).setY(0.06);
+      range.show(selected.x, selected.y, towerRange(selected.type, selected.level), color);
+      selectRing.visible = true;
+      selectRing.position.copy(toWorld(selected.x, selected.y)).setY(0.06);
       (selectRing.material as THREE.MeshBasicMaterial).color.copy(hdr(color, 1.6 + Math.sin(t * 5) * 0.4));
     } else {
-      range.visible = selectRing.visible = false;
+      range.hide();
+      selectRing.visible = false;
     }
-    hoverRange.visible = !!hovered;
-    if (hovered) {
-      hoverRange.position.copy(toWorld(hovered.x, hovered.y)).setY(0.05);
-      hoverRange.scale.setScalar(towerRange(hovered.type, hovered.level) / UNIT);
-      (hoverRange.material as THREE.MeshBasicMaterial).color.copy(hdr(TOWER_STATS[hovered.type].color, 1));
-    }
+    if (hovered) hoverRange.show(hovered.x, hovered.y, towerRange(hovered.type, hovered.level), TOWER_STATS[hovered.type].color);
+    else hoverRange.hide();
 
     // Placement / relocation preview
     ghosts.forEach(g => { g.visible = false; });
@@ -567,11 +616,7 @@ export const createGameScene = (
       ghost.visible = true;
       ghost.position.copy(at);
       const color = valid ? TOWER_STATS[ghostType].color : '#ff3b3b';
-      range.visible = true;
-      range.position.copy(at).setY(0.04);
-      range.scale.setScalar(towerRange(ghostType, relocating?.level ?? 1) / UNIT);
-      (rangeFill.material as THREE.MeshBasicMaterial).color.copy(hdr(color, 1));
-      (rangeEdge.material as THREE.MeshBasicMaterial).color.copy(hdr(color, 1.4));
+      range.show(inputs.mouse.x, inputs.mouse.y, towerRange(ghostType, relocating?.level ?? 1), color);
       ghostPad.visible = true;
       ghostPad.position.copy(at).setY(0.05);
       (ghostPad.material as THREE.MeshBasicMaterial).color.copy(hdr(color, 2));
