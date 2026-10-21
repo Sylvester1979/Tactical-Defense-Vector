@@ -417,9 +417,19 @@ export function useGame() {
     waveRef.current = idleWave();
   };
 
+  // What's left of the running wave, by kind: alive now plus still to spawn (re-derived every tick)
+  let waveRemaining: Record<string, number> | null = null;
+  const run = waveRef.current;
+  if (waveActive && run.config) {
+    waveRemaining = {};
+    for (const kind of run.config.spawns.slice(run.config.count - run.toSpawn)) waveRemaining[kind] = (waveRemaining[kind] ?? 0) + 1;
+    for (const e of enemies) waveRemaining[e.type] = (waveRemaining[e.type] ?? 0) + 1;
+  }
+
   return {
     gameState,
     setGameState,
+    waveRemaining,
     towers,
     enemies,
     projectiles,

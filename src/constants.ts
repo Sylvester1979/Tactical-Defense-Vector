@@ -287,6 +287,13 @@ export const BASE_TOWERS = [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH]
 export const isBaseTower = (type: TowerType) => BASE_TOWERS.includes(type);
 export const getMaxLevel = (type: TowerType) => (isBaseTower(type) ? 3 : 5);
 
+// What each base tower can specialize into at level 3
+export const SPECIALIZATIONS: Record<string, TowerType[]> = {
+  [TowerType.BASIC]: [TowerType.VULCAN_TITAN, TowerType.VULCAN_STING],
+  [TowerType.SNIPER]: [TowerType.RAILGUN_PIERCER, TowerType.RAILGUN_HYPER],
+  [TowerType.SPLASH]: [TowerType.MORTAR_CRYO, TowerType.MORTAR_BOMBER],
+};
+
 // Upgrades cost a share of the tower's price per current level; specializations are pricier
 // towers, so their upgrades take a smaller share to keep levels 4 and 5 worth buying
 export const getUpgradeCost = (type: TowerType, level: number) =>
