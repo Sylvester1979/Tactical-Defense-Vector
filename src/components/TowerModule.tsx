@@ -9,8 +9,9 @@ import {
   MoveVertical,
   X
 } from 'lucide-react';
-import { TowerInstance, GameState, TowerType, TargetingMode, DamageType } from '../types';
-import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT, getSellValue, getUpgradeCost, getMaxLevel, isBaseTower } from '../constants';
+import { TowerInstance, GameState, TowerType, TargetingMode } from '../types';
+import { TOWER_STATS, RELOCATION_FEE, CANVAS_WIDTH, CANVAS_HEIGHT, getSellValue, getUpgradeCost, getMaxLevel, isBaseTower, SPECIALIZATIONS } from '../constants';
+import { DMG_STYLE } from './uiStyles';
 import { toIso } from '../lib/iso';
 import { towerDamage } from '../game/sim';
 
@@ -24,14 +25,6 @@ interface TowerModuleProps {
   onSetTargetingMode: (id: string, mode: TargetingMode) => void;
   onClose: () => void;
 }
-
-const DMG_STYLE: Record<DamageType, { label: string; cls: string }> = {
-  [DamageType.KINETIC]:   { label: 'KINETIC',   cls: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
-  [DamageType.ENERGY]:    { label: 'ENERGY',    cls: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
-  [DamageType.EXPLOSIVE]: { label: 'EXPLOSIVE', cls: 'bg-red-500/20 text-red-300 border-red-500/30' },
-  [DamageType.FROST]:     { label: 'FROST',     cls: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' },
-  [DamageType.FIRE]:      { label: 'FIRE',      cls: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
-};
 
 const TARGETING_LABELS: Record<TargetingMode, string> = {
   [TargetingMode.FIRST]:    'FIRST',
@@ -70,11 +63,6 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   const isSpecialized = !isBaseType;
   const showSpecialization = tower.level >= 3 && isBaseType;
   
-  const specOptions: Record<string, TowerType[]> = {
-    [TowerType.BASIC]: [TowerType.VULCAN_TITAN, TowerType.VULCAN_STING],
-    [TowerType.SNIPER]: [TowerType.RAILGUN_PIERCER, TowerType.RAILGUN_HYPER],
-    [TowerType.SPLASH]: [TowerType.MORTAR_CRYO, TowerType.MORTAR_BOMBER],
-  };
 
   const sellValue = getSellValue(tower);
   const canAffordUpgrade = gameState.money >= upgradeCost;
@@ -86,7 +74,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
 
   return (
     <div
-      className="absolute pointer-events-none cursor-crosshair"
+      className="absolute pointer-events-none cursor-crosshair z-[70]"
       style={{ left: clampedX - MODULE_WIDTH / 2, top: clampedY }}
     >
       <AnimatePresence>
@@ -245,7 +233,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
               <div className="flex flex-col gap-2 pt-2">
                 {showSpecialization ? (
                   <div className="grid grid-cols-2 gap-2">
-                    {specOptions[tower.type]?.map(specType => {
+                    {SPECIALIZATIONS[tower.type]?.map(specType => {
                       const specStats = TOWER_STATS[specType];
                       const canAffordSpec = gameState.money >= specStats.cost;
                       return (

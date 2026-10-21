@@ -12,7 +12,7 @@
 import { TargetingMode, TowerInstance, TowerType } from '../../src/types';
 import {
   BASE_TOWERS, ENEMY_TYPES, INITIAL_LIVES, INITIAL_MONEY, PATH, TOWER_STATS, WAVES,
-  getEnemyHealth, getMaxLevel, getUpgradeCost, getWaveBonus, getWaveConfig, isBaseTower,
+  getEnemyHealth, getMaxLevel, getUpgradeCost, getWaveBonus, getWaveConfig, isBaseTower, SPECIALIZATIONS,
 } from '../../src/constants';
 import { checkPlacement } from '../../src/lib/placement';
 import { SimState, getDistance, idleWave, startWaveRun, step, PATH_LENGTH, towerDamage, towerRange } from '../../src/game/sim';
@@ -20,11 +20,7 @@ import { getFireInterval } from '../../src/constants';
 
 const DT = 1 / 60;
 const BASE = BASE_TOWERS;
-const SPECS: Record<string, TowerType[]> = {
-  [TowerType.BASIC]: [TowerType.VULCAN_TITAN, TowerType.VULCAN_STING],
-  [TowerType.SNIPER]: [TowerType.RAILGUN_PIERCER, TowerType.RAILGUN_HYPER],
-  [TowerType.SPLASH]: [TowerType.MORTAR_CRYO, TowerType.MORTAR_BOMBER],
-};
+const SPECS = SPECIALIZATIONS;
 const isBase = isBaseTower;
 const upgradeCost = (t: TowerInstance) => getUpgradeCost(t.type, t.level);
 const maxLevel = (t: TowerInstance) => getMaxLevel(t.type);

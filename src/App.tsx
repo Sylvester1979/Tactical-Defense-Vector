@@ -50,8 +50,8 @@ export default function App() {
     createFloatingText,
     bestWaves,
     newRecord,
-    restoredFromSave,
-    restart
+    restart,
+    waveRemaining,
   } = useGame();
 
   const [placingType, setPlacingType] = useState<TowerType | null>(null);
@@ -231,9 +231,9 @@ export default function App() {
         onToggleMute={toggleMute}
         bestWaves={bestWaves}
         newRecord={newRecord}
-        restoredFromSave={restoredFromSave}
         screenGrid={!use3D}
         assetsReady={assetsReady}
+        waveRemaining={waveRemaining}
         onUpgradeTower={upgradeTower}
         onSpecializeTower={specializeTower}
         onSellTower={sellTower}
