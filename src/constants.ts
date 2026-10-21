@@ -42,9 +42,9 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     name: 'Railgun',
     description: 'Long-range precision cannon. Low fire rate, extreme single-target damage. Bypasses energy resistances on most enemies.',
     range: 300,
-    damage: 45,
+    damage: 50,
     fireRate: 0.35,
-    cost: 250,
+    cost: 200,
     color: '#8b5cf6',
     projectileSpeed: 1000,
   },
@@ -53,9 +53,9 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     damageType: DamageType.EXPLOSIVE,
     name: 'Nova Mortar',
     description: 'Area-denial artillery. Explosive shells damage all enemies within blast radius. Essential against clustered waves.',
-    range: 120,
-    damage: 18,
-    fireRate: 0.5,
+    range: 140,
+    damage: 24,
+    fireRate: 0.6,
     cost: 200,
     color: '#ef4444',
     projectileSpeed: 250,
@@ -167,7 +167,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     reward: 35,
     color: '#94a3b8',
     size: 30,
-    resistances: { [DamageType.EXPLOSIVE]: 0.6, [DamageType.KINETIC]: 0.8 }, // Tanky
+    resistances: { [DamageType.EXPLOSIVE]: 0.6, [DamageType.KINETIC]: 0.55 }, // Armoured: bring energy or frost
     leakDamage: 2,
   },
   PHANTOM: {
@@ -186,66 +186,83 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     reward: 250,
     color: '#ef4444',
     size: 50,
-    resistances: { [DamageType.FIRE]: 1.3, [DamageType.ENERGY]: 1.2 }, // Weak to fire/energy
+    resistances: { [DamageType.FIRE]: 1.3, [DamageType.ENERGY]: 1.2, [DamageType.KINETIC]: 0.6 }, // Weak to fire/energy, armoured
     leakDamage: 5,
   },
 };
 
-export const WAVES = [
-  { count: 12, interval: 1.5, enemyTypes: ['SCOUT'] },
-  { count: 18, interval: 1.0, enemyTypes: ['SCOUT', 'INTERCEPTOR'] },
-  { count: 15, interval: 0.8, enemyTypes: ['INTERCEPTOR'], modifier: WaveModifier.RUSH },
-  { count: 10, interval: 2.2, enemyTypes: ['SCOUT', 'GUARDIAN'] },
-  { count: 20, interval: 1.2, enemyTypes: ['PHANTOM', 'SCOUT'] },
-  { count: 30, interval: 0.7, enemyTypes: ['SCOUT', 'INTERCEPTOR', 'PHANTOM'], modifier: WaveModifier.SWARM },
-  { count: 15, interval: 2.0, enemyTypes: ['GUARDIAN', 'PHANTOM'], modifier: WaveModifier.ELITE },
-  { count: 25, interval: 0.6, enemyTypes: ['INTERCEPTOR', 'PHANTOM'] },
-  { count: 1,  interval: 1.0, enemyTypes: ['COLOSSUS'], modifier: WaveModifier.ELITE },
-  { count: 45, interval: 0.5, enemyTypes: ['SCOUT', 'INTERCEPTOR', 'PHANTOM', 'GUARDIAN'] },
-  { count: 15, interval: 2.5, enemyTypes: ['GUARDIAN', 'INTERCEPTOR'] },
-  { count: 35, interval: 0.3, enemyTypes: ['SCOUT'], modifier: WaveModifier.SWARM },
-  { count: 12, interval: 1.5, enemyTypes: ['COLOSSUS', 'SCOUT'], modifier: WaveModifier.ELITE },
-  { count: 50, interval: 0.8, enemyTypes: ['PHANTOM', 'INTERCEPTOR'], modifier: WaveModifier.RUSH },
-  { count: 20, interval: 1.0, enemyTypes: ['GUARDIAN', 'PHANTOM', 'COLOSSUS'], modifier: WaveModifier.ELITE },
-  { count: 100, interval: 0.1, enemyTypes: ['SCOUT', 'INTERCEPTOR'], modifier: WaveModifier.SWARM },
-  { count: 30, interval: 1.2, enemyTypes: ['COLOSSUS', 'GUARDIAN'], modifier: WaveModifier.ELITE },
-  { count: 50, interval: 0.5, enemyTypes: ['PHANTOM', 'GUARDIAN'] },
-  { count: 2,  interval: 2.0, enemyTypes: ['COLOSSUS'], modifier: WaveModifier.ELITE },
-  { count: 150, interval: 0.05, enemyTypes: ['INTERCEPTOR', 'PHANTOM'], modifier: WaveModifier.RUSH },
+// Bosses are elite by nature: wave modifiers shape their escort, never the boss itself
+export const BOSS_TYPES = ['COLOSSUS'];
+export const isBoss = (type: string) => BOSS_TYPES.includes(type);
+
+// Each wave lists exactly how many of each enemy it sends (spread evenly over the wave), the
+// gap between spawns, and an optional modifier. Tuned with `npm run balance`.
+interface WaveDef { mix: Record<string, number>; interval: number; modifier?: WaveModifier }
+
+export const WAVES: WaveDef[] = [
+  { mix: { SCOUT: 12 }, interval: 1.5 },
+  { mix: { SCOUT: 12, INTERCEPTOR: 6 }, interval: 1.0 },
+  { mix: { INTERCEPTOR: 12 }, interval: 1.1, modifier: WaveModifier.RUSH },
+  { mix: { SCOUT: 8, GUARDIAN: 2 }, interval: 1.6 },
+  { mix: { SCOUT: 12, PHANTOM: 8 }, interval: 1.1 },
+  { mix: { SCOUT: 12, INTERCEPTOR: 10, PHANTOM: 8 }, interval: 0.7, modifier: WaveModifier.SWARM },
+  { mix: { GUARDIAN: 4, PHANTOM: 10 }, interval: 2.0, modifier: WaveModifier.ELITE },
+  { mix: { INTERCEPTOR: 15, PHANTOM: 10 }, interval: 0.7 },
+  { mix: { SCOUT: 10, COLOSSUS: 1 }, interval: 1.2 },
+  { mix: { SCOUT: 15, INTERCEPTOR: 12, PHANTOM: 12, GUARDIAN: 6 }, interval: 0.7 },
+  { mix: { GUARDIAN: 10, INTERCEPTOR: 12 }, interval: 1.2 },
+  { mix: { SCOUT: 35, INTERCEPTOR: 15 }, interval: 0.25, modifier: WaveModifier.SWARM },
+  { mix: { SCOUT: 10, GUARDIAN: 4, COLOSSUS: 2 }, interval: 1.4 },
+  { mix: { PHANTOM: 25, INTERCEPTOR: 25 }, interval: 0.65, modifier: WaveModifier.RUSH },
+  { mix: { GUARDIAN: 10, PHANTOM: 10 }, interval: 1.6, modifier: WaveModifier.ELITE },
+  { mix: { SCOUT: 50, INTERCEPTOR: 50, PHANTOM: 15 }, interval: 0.1, modifier: WaveModifier.SWARM },
+  { mix: { GUARDIAN: 12, COLOSSUS: 2 }, interval: 1.5 },
+  { mix: { PHANTOM: 25, GUARDIAN: 25 }, interval: 0.55 },
+  { mix: { PHANTOM: 15, GUARDIAN: 8, COLOSSUS: 3 }, interval: 1.3 },
+  { mix: { INTERCEPTOR: 30, PHANTOM: 30, GUARDIAN: 10, COLOSSUS: 2 }, interval: 0.3 },
 ];
 
 export interface WaveConfig {
-  count: number;          // Enemies actually spawned (modifier already applied)
+  count: number;                   // enemies spawned (modifier applied)
   interval: number;
-  enemyTypes: string[];
+  enemyTypes: string[];            // the kinds in the wave
+  counts: Record<string, number>;  // how many of each kind (modifier applied)
+  spawns: string[];                // the spawn order: each kind spread evenly over the wave
   modifier: WaveModifier;
   healthMult: number;
   speedMult: number;
   rewardMult: number;
 }
 
+// Interleave the kinds so each is spread evenly across the wave instead of arriving in blocks
+const spawnOrder = (counts: Record<string, number>) =>
+  Object.entries(counts)
+    .flatMap(([kind, n], k) => Array.from({ length: n }, (_, i) => ({ kind, at: (i + 0.5) / n, k })))
+    .sort((a, b) => a.at - b.at || a.k - b.k)
+    .map(e => e.kind);
+
 // Single source of truth for a wave's composition — used by the engine and the preview UI
 export const getWaveConfig = (waveNumber: number): WaveConfig => {
-  let wave = WAVES[waveNumber - 1];
-  if (!wave) {
+  let def = WAVES[waveNumber - 1];
+  if (!def) {
     // Procedural scaling past the scripted waves
-    const baseWave = WAVES[(waveNumber - 1) % WAVES.length];
-    const difficultyScale = Math.floor(waveNumber / WAVES.length);
-    wave = {
-      count: Math.floor(baseWave.count * (1 + difficultyScale * 0.8)),
-      interval: baseWave.interval * Math.pow(0.85, difficultyScale),
-      enemyTypes: baseWave.enemyTypes,
-      modifier: baseWave.modifier,
+    const base = WAVES[(waveNumber - 1) % WAVES.length];
+    const k = Math.floor(waveNumber / WAVES.length);
+    def = {
+      mix: Object.fromEntries(Object.entries(base.mix).map(([kind, n]) => [kind, Math.floor(n * (1 + k * 0.8))])),
+      interval: base.interval * Math.pow(0.85, k),
+      modifier: base.modifier,
     };
   }
-  const modifier = wave.modifier ?? WaveModifier.NONE;
-  let count = wave.count;
-  if (modifier === WaveModifier.SWARM) count = wave.count * 2;
-  if (modifier === WaveModifier.ELITE) count = Math.ceil(wave.count * 0.5);
+  const modifier = def.modifier ?? WaveModifier.NONE;
+  const counts = Object.fromEntries(Object.entries(def.mix).map(([kind, n]) => [kind,
+    isBoss(kind) ? n : modifier === WaveModifier.SWARM ? n * 2 : modifier === WaveModifier.ELITE ? Math.ceil(n * 0.5) : n]));
   return {
-    count,
-    interval: wave.interval,
-    enemyTypes: wave.enemyTypes,
+    count: Object.values(counts).reduce((a, b) => a + b, 0),
+    interval: def.interval,
+    enemyTypes: Object.keys(counts),
+    counts,
+    spawns: spawnOrder(counts),
     modifier,
     healthMult: modifier === WaveModifier.SWARM ? 0.5 : modifier === WaveModifier.ELITE ? 2.0 : 1.0,
     speedMult: modifier === WaveModifier.RUSH ? 1.6 : 1.0,
@@ -253,9 +270,11 @@ export const getWaveConfig = (waveNumber: number): WaveConfig => {
   };
 };
 
-// Slightly softer health scaling for early game
+// Enemy health grows by this share of its base per wave, from wave 3 on
+export const HEALTH_GROWTH = 0.22;
+
 export const getEnemyHealth = (type: string, waveNumber: number, healthMult: number) =>
-  ENEMY_TYPES[type].health * (1 + Math.max(0, waveNumber - 2) * 0.10) * healthMult;
+  ENEMY_TYPES[type].health * (1 + Math.max(0, waveNumber - 2) * HEALTH_GROWTH) * (isBoss(type) ? 1 : healthMult);
 
 export const getWaveBonus = (waveNumber: number) => 120 + (waveNumber - 1) * 25;
 

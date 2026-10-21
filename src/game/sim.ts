@@ -1,5 +1,5 @@
 import { DamageType, EnemyInstance, Point, Projectile, TargetingMode, TowerInstance, TowerType } from '../types';
-import { ENEMY_TYPES, PATH, TOWER_STATS, WaveConfig, getEnemyHealth, getFireInterval, getWaveConfig } from '../constants';
+import { ENEMY_TYPES, PATH, TOWER_STATS, WaveConfig, getEnemyHealth, getFireInterval, getWaveConfig, isBoss } from '../constants';
 import type { SoundName } from '../lib/audio';
 
 // The game's rules, free of React and rendering: one fixed-size step of the battle at a time.
@@ -105,7 +105,7 @@ const uid = (prefix: string, rng: () => number) => `${prefix}-${rng().toString(3
 
 /**
  * Advances the battle by `dt` seconds. Mutates `s` (enemies, towers, projectiles, wave) and
- * returns what changed in the economy. `rng` drives enemy type rolls; `now` stamps hits (ms).
+ * returns what changed in the economy. `rng` only feeds ids; `now` stamps hits (ms).
  */
 export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: () => number = Math.random, now = Date.now()): StepResult => {
   let enemies = [...s.enemies];
@@ -123,8 +123,9 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
     // so dense waves keep their scripted spawn rate instead of drifting slower
     while (wave.toSpawn > 0 && wave.spawnTimer >= cfg.interval) {
       wave.spawnTimer -= cfg.interval;
+      const type = cfg.spawns[cfg.count - wave.toSpawn];
       wave.toSpawn--;
-      const type = cfg.enemyTypes[Math.floor(rng() * cfg.enemyTypes.length)];
+      const boss = isBoss(type); // modifiers shape the escort, not the boss
       const baseHealth = getEnemyHealth(type, s.waveNumber || 1, cfg.healthMult);
       enemies.push({
         id: uid('e', rng),
@@ -141,8 +142,8 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
         slowMultiplier: 1,
         burnDuration: 0,
         burnDamagePerSec: 0,
-        speedMultiplier: cfg.speedMult,
-        rewardMultiplier: cfg.rewardMult,
+        speedMultiplier: boss ? 1 : cfg.speedMult,
+        rewardMultiplier: boss ? 1 : cfg.rewardMult,
       });
     }
   }

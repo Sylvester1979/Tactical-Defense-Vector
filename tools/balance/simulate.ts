@@ -8,7 +8,7 @@
 // whatever adds the most expected damage per credit, and keeps spending through each wave.
 // Its results bound the difficulty from the "competent player" side.
 
-import { TargetingMode, TowerInstance, TowerType, DamageType } from '../../src/types';
+import { TargetingMode, TowerInstance, TowerType } from '../../src/types';
 import {
   ENEMY_TYPES, INITIAL_LIVES, INITIAL_MONEY, PATH, TOWER_STATS, WAVES,
   getEnemyHealth, getWaveBonus, getWaveConfig,
@@ -54,43 +54,53 @@ const SPOTS = (() => {
   return s;
 })();
 
-// ── How much a tower is worth: damage per second × road it covers × kit bonuses ─────────
-interface Profile { kinetic: number; energy: number; explosive: number; frost: number; fire: number }
-const RESIST_KEYS: Record<DamageType, keyof Profile> = {
-  [DamageType.KINETIC]: 'kinetic', [DamageType.ENERGY]: 'energy', [DamageType.EXPLOSIVE]: 'explosive',
-  [DamageType.FROST]: 'frost', [DamageType.FIRE]: 'fire',
-};
-// Average damage multiplier of each damage type against the next few waves' enemies
-const resistProfile = (fromWave: number): Profile => {
-  const p: Profile = { kinetic: 0, energy: 0, explosive: 0, frost: 0, fire: 0 };
-  let n = 0;
-  for (let w = fromWave; w < fromWave + 3; w++) {
-    const cfg = getWaveConfig(w);
-    for (const type of cfg.enemyTypes) {
-      const hp = getEnemyHealth(type, w, cfg.healthMult) * cfg.count / cfg.enemyTypes.length;
-      for (const dt of Object.values(DamageType)) p[RESIST_KEYS[dt]] += (ENEMY_TYPES[type].resistances?.[dt] ?? 1) * hp;
-      n += hp;
-    }
+// ── How much a tower is worth ───────────────────────────────────────────────
+// What a careful player learns by playing: how much damage each tower (and level) actually lands
+// on each enemy kind, at sparse and dense spacing, measured on the game's rules (see
+// damageLanded below). A spot is worth that much in proportion to the road it covers.
+const SPARSE = 1.0, DENSE = 0.3;
+const rates = new Map<string, number>(); // `${type}|${level}|${kind}|${interval}` -> damage per px of road covered
+const rate = (type: TowerType, level: number, kind: string, interval: number) => {
+  const key = `${type}|${level}|${kind}|${interval}`;
+  let r = rates.get(key);
+  if (r === undefined) {
+    const { dealt, coverage: cov } = damageLanded(type, level, kind, interval);
+    r = dealt / Math.max(1, cov);
+    rates.set(key, r);
   }
-  for (const k of Object.keys(p) as (keyof Profile)[]) p[k] /= n;
-  return p;
+  return r;
 };
 
-const towerValue = (type: TowerType, level: number, x: number, y: number, prof: Profile) => {
-  const st = TOWER_STATS[type];
-  let dps = towerDamage({ type, level }) / getFireInterval(type, level);
-  if (st.burnDamage && st.burnDuration) dps += st.burnDamage * st.burnDuration / getFireInterval(type, level) * 0.5;
-  if (st.splashRadius) dps *= 1 + st.splashRadius / 45;   // clustered enemies
-  if (st.isPiercing) dps *= 1.6;
-  if (st.slowEffect) dps *= 1.35;                         // slowed enemies stay in every tower's range longer
-  dps *= prof[RESIST_KEYS[st.damageType]];
-  return dps * coverage(x, y, towerRange({ type, level })) / 100;
+// The coming waves, as weights per enemy kind (share of their total health) and spacing
+interface Outlook { weights: Record<string, number>; interval: number }
+const outlook = (fromWave: number): Outlook => {
+  const weights: Record<string, number> = {};
+  let total = 0;
+  for (let w = fromWave; w < fromWave + 3; w++) {
+    const cfg = getWaveConfig(w);
+    for (const kind of cfg.enemyTypes) {
+      const hp = getEnemyHealth(kind, w, cfg.healthMult) * cfg.counts[kind];
+      weights[kind] = (weights[kind] ?? 0) + hp;
+      total += hp;
+    }
+  }
+  for (const k of Object.keys(weights)) weights[k] /= total;
+  return { weights, interval: getWaveConfig(fromWave).interval <= 0.6 ? DENSE : SPARSE };
+};
+
+const towerValue = (type: TowerType, level: number, x: number, y: number, look: Outlook) => {
+  const cov = coverage(x, y, towerRange({ type, level }));
+  let v = 0;
+  for (const [kind, w] of Object.entries(look.weights)) v += w * rate(type, level, kind, look.interval);
+  return v * cov;
 };
 
 // ── Strategies ─────────────────────────────────────────────────────────────
-type Strategy = { name: string; allow: (t: TowerType) => boolean; specialize: boolean };
+// casual: builds only between waves, on good rather than the best spots — closer to a human
+type Strategy = { name: string; allow: (t: TowerType) => boolean; specialize: boolean; casual?: boolean };
 const STRATEGIES: Strategy[] = [
   { name: 'mixed', allow: () => true, specialize: true },
+  { name: 'casual', allow: () => true, specialize: true, casual: true },
   { name: 'no-specialize', allow: () => true, specialize: false },
   { name: 'vulcan-only', allow: t => TOWER_STATS[t].type === TowerType.BASIC, specialize: true },
   { name: 'railgun-only', allow: t => TOWER_STATS[t].type === TowerType.SNIPER, specialize: true },
@@ -99,15 +109,22 @@ const STRATEGIES: Strategy[] = [
 
 interface Option { cost: number; gain: number; apply: () => void }
 
-const plan = (towers: TowerInstance[], money: number, prof: Profile, strat: Strategy, rng: () => number): Option | null => {
+const plan = (towers: TowerInstance[], money: number, prof: Outlook, strat: Strategy, rng: () => number): Option | null => {
   const opts: Option[] = [];
   // New towers at the best free spot for their range
   for (const type of BASE.filter(strat.allow)) {
     let best: { x: number; y: number; v: number } | null = null;
+    const ranked: { x: number; y: number; v: number }[] = [];
     for (const s of SPOTS) {
       if (checkPlacement(s, towers) !== 'OK') continue;
       const v = towerValue(type, 1, s.x, s.y, prof);
+      ranked.push({ ...s, v });
       if (!best || v > best.v) best = { ...s, v };
+    }
+    if (strat.casual && ranked.length) {
+      // A decent spot, not the optimum: somewhere in the top third
+      ranked.sort((a, b) => b.v - a.v);
+      best = ranked[Math.floor(rng() * Math.max(1, ranked.length / 3))];
     }
     if (best) {
       const b = best;
@@ -129,7 +146,7 @@ const plan = (towers: TowerInstance[], money: number, prof: Profile, strat: Stra
     } else if (strat.specialize && isBase(t.type)) {
       for (const spec of SPECS[t.type].filter(strat.allow)) {
         const cost = TOWER_STATS[spec].cost;
-        opts.push({ cost, gain: towerValue(spec, 1, t.x, t.y, prof) - now, apply: () => { t.type = spec; t.level = 1; t.invested += cost; } });
+        opts.push({ cost, gain: towerValue(spec, t.level, t.x, t.y, prof) - now, apply: () => { t.type = spec; t.invested += cost; } });
       }
     }
   }
@@ -141,6 +158,7 @@ const plan = (towers: TowerInstance[], money: number, prof: Profile, strat: Stra
 interface WaveRow {
   wave: number; modifier: string; count: number; hpEach: number; startMoney: number; spent: number;
   earned: number; bonus: number; leaks: number; lives: number; towers: number; dps: number; seconds: number;
+  danger: number; // how far along the road (%) the deepest enemy got; 100 = it reached the core
 }
 
 const run = (strat: Strategy, seed: number, lastWave = WAVES.length) => {
@@ -148,9 +166,10 @@ const run = (strat: Strategy, seed: number, lastWave = WAVES.length) => {
   const s: SimState = { waveNumber: 0, enemies: [], towers: [], projectiles: [], wave: idleWave() };
   let money = INITIAL_MONEY, lives = INITIAL_LIVES;
   const rows: WaveRow[] = [];
-  const spend = () => {
+  // Spend on what the given wave and the two after it need
+  const spend = (wave: number) => {
     let spent = 0;
-    const prof = resistProfile(Math.max(1, s.waveNumber));
+    const prof = outlook(wave);
     for (let guard = 0; guard < 50; guard++) {
       const o = plan(s.towers, money, prof, strat, rng);
       if (!o) break;
@@ -162,27 +181,29 @@ const run = (strat: Strategy, seed: number, lastWave = WAVES.length) => {
   };
   for (let w = 1; w <= lastWave && lives > 0; w++) {
     const startMoney = money;
-    let spent = spend();
+    let spent = spend(w);
     s.waveNumber = w;
     s.wave = startWaveRun(w);
-    let earned = 0, leaks = 0, t = 0;
+    let earned = 0, leaks = 0, t = 0, danger = 0;
     while (s.wave.active && lives > 0 && t < 900) {
       const r = step(s, DT, undefined, rng, t * 1000);
+      for (const e of s.enemies) danger = Math.max(danger, e.distanceTraveled / PATH_LENGTH);
+      if (r.livesLost) danger = 1;
       earned += r.moneyEarned; money += r.moneyEarned;
       leaks += r.livesLost; lives -= r.livesLost;
       t += DT;
       // A player keeps building during the wave
-      if (Math.floor(t / 2) !== Math.floor((t - DT) / 2)) spent += spend();
+      if (!strat.casual && Math.floor(t / 2) !== Math.floor((t - DT) / 2)) spent += spend(w);
     }
     const bonus = lives > 0 ? getWaveBonus(w) : 0;
     money += bonus;
     const cfg = getWaveConfig(w);
     rows.push({
       wave: w, modifier: cfg.modifier, count: cfg.count,
-      hpEach: Math.round(cfg.enemyTypes.reduce((a, ty) => a + getEnemyHealth(ty, w, cfg.healthMult), 0) / cfg.enemyTypes.length),
+      hpEach: Math.round(cfg.enemyTypes.reduce((a, ty) => a + getEnemyHealth(ty, w, cfg.healthMult) * cfg.counts[ty], 0) / cfg.count),
       startMoney, spent, earned, bonus, leaks, lives: Math.max(0, lives), towers: s.towers.length,
       dps: Math.round(s.towers.reduce((a, tw) => a + towerDamage(tw) / getFireInterval(tw.type, tw.level), 0)),
-      seconds: Math.round(t),
+      seconds: Math.round(t), danger: Math.round(danger * 100),
     });
   }
   return { rows, towers: s.towers, money, lives };
@@ -194,8 +215,9 @@ const investedFor = (type: TowerType, level: number) => {
   const ups = (t: TowerType, upto: number) =>
     Array.from({ length: upto - 1 }, (_, i) => Math.floor(TOWER_STATS[t].cost * 0.7 * (i + 1))).reduce((a, b) => a + b, 0);
   if (isBase(type)) return TOWER_STATS[type].cost + ups(type, level);
+  // Specializing keeps the level: base to L3, the specialization, then upgrades from L3
   const base = BASE.find(b => SPECS[b].includes(type))!;
-  return TOWER_STATS[base].cost + ups(base, 3) + TOWER_STATS[type].cost + ups(type, level);
+  return TOWER_STATS[base].cost + ups(base, 3) + TOWER_STATS[type].cost + ups(type, level) - ups(type, 3);
 };
 
 const damageLanded = (type: TowerType, level: number, kind: string, interval: number) => {
@@ -207,29 +229,35 @@ const damageLanded = (type: TowerType, level: number, kind: string, interval: nu
     waveNumber: 1, enemies: [], projectiles: [],
     towers: [{ id: 'x', type, baseType: isBase(type) ? type : BASE.find(b => SPECS[b].includes(type))!, x: spot.x, y: spot.y, level, lastFired: 0, targetId: null,
       currentAngle: 0, targetingMode: TargetingMode.FIRST, invested: 0 }],
-    wave: { config: { ...getWaveConfig(1), count: 30, interval, enemyTypes: [kind], healthMult: 1e7 }, toSpawn: 30, spawnTimer: 0, active: true },
+    wave: { config: { ...getWaveConfig(1), count: 30, interval, enemyTypes: [kind], counts: { [kind]: 30 }, spawns: Array(30).fill(kind) },
+      toSpawn: 30, spawnTimer: 0, active: true },
   };
-  const last = new Map<string, number>();
+  // Enemies never die: count the damage each step, then top their health back up
+  const HUGE = 1e12;
   let dealt = 0, t = 0;
   while (s.wave.active && t < 400) {
     step(s, DT, undefined, rng, t * 1000);
-    for (const e of s.enemies) { dealt += (last.get(e.id) ?? e.maxHealth) - e.health; last.set(e.id, e.health); }
+    for (const e of s.enemies) {
+      const before = e.maxHealth === HUGE ? HUGE : e.maxHealth;
+      dealt += before - e.health;
+      e.health = e.maxHealth = HUGE;
+    }
     t += DT;
   }
-  return dealt;
+  return { dealt, coverage: best };
 };
 
 const efficiencyReport = (interval: number) => {
   const kinds = Object.keys(ENEMY_TYPES);
   const cases: [TowerType, number][] = [
     ...BASE.flatMap(t => [[t, 1], [t, 3]] as [TowerType, number][]),
-    ...Object.values(SPECS).flat().flatMap(t => [[t, 1], [t, 5]] as [TowerType, number][]),
+    ...Object.values(SPECS).flat().flatMap(t => [[t, 3], [t, 5]] as [TowerType, number][]),
   ];
   console.log(`Damage landed per credit invested, one tower vs 30 unkillable enemies spawning every ${interval}s, best spot for its range`);
   console.log('tower               invested  ' + kinds.map(k => k.padStart(11)).join(''));
   for (const [type, level] of cases) {
     const cost = investedFor(type, level);
-    const cells = kinds.map(k => (damageLanded(type, level, k, interval) / cost).toFixed(1).padStart(11));
+    const cells = kinds.map(k => (damageLanded(type, level, k, interval).dealt / cost).toFixed(1).padStart(11));
     console.log(`${(type + ' L' + level).padEnd(20)}${String(cost).padStart(8)}  ${cells.join('')}`);
   }
 };
@@ -245,7 +273,12 @@ for (const strat of strategies) {
   const runs = Array.from({ length: SEEDS }, (_, i) => run(strat, 1000 + i));
   const reached = runs.map(r => r.rows.filter(row => row.lives > 0).length);
   console.log(`== ${strat.name}: waves survived ${reached.join(', ')} (of ${WAVES.length}) · final lives ${runs.map(r => Math.max(0, r.lives)).join(', ')}`);
-  console.log('wave mod    count  hp/en   start  spent  kills  bonus  leaks  lives  towers   dps   secs');
+  // Where each run bled: wave×leaks, so one bad wave doesn't hide in the averages
+  runs.forEach((r, i) => {
+    const bled = r.rows.filter(row => row.leaks > 0).map(row => `${row.wave}×${row.leaks}`);
+    if (bled.length) console.log(`  seed ${1000 + i}: ${bled.join(' ')}`);
+  });
+  console.log('wave mod    count  hp/en   start  spent  kills  bonus  leaks  lives  towers   dps   secs  danger%');
   const first = runs[0].rows;
   for (let i = 0; i < WAVES.length; i++) {
     const rs = runs.map(r => r.rows[i]).filter(Boolean);
@@ -256,7 +289,7 @@ for (const strat of strategies) {
       `${String(r0.wave).padStart(4)} ${r0.modifier.padEnd(6)} ${String(r0.count).padStart(5)} ${String(r0.hpEach).padStart(6)} ` +
       `${String(avg('startMoney')).padStart(7)} ${String(avg('spent')).padStart(6)} ${String(avg('earned')).padStart(6)} ` +
       `${String(avg('bonus')).padStart(6)} ${String(avg('leaks')).padStart(6)} ${String(avg('lives')).padStart(6)} ` +
-      `${String(avg('towers')).padStart(7)} ${String(avg('dps')).padStart(5)} ${String(avg('seconds')).padStart(6)}  (${rs.length}/${SEEDS} runs)`);
+      `${String(avg('towers')).padStart(7)} ${String(avg('dps')).padStart(5)} ${String(avg('seconds')).padStart(6)} ${String(avg('danger')).padStart(8)}  (${rs.length}/${SEEDS} runs)`);
   }
   const last = runs[0];
   console.log('  final build (seed 1):', Object.entries(last.towers.reduce<Record<string, number[]>>((a, t) => ((a[t.type] ??= []).push(t.level), a), {}))
