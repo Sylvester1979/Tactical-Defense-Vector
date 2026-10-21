@@ -11,7 +11,8 @@ import {
   MoveVertical,
   Crosshair,
   Volume2,
-  VolumeX
+  VolumeX,
+  HelpCircle,
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
 import { CommandDeck } from './CommandDeck';
@@ -48,6 +49,21 @@ interface UIOverlayProps {
   waveRemaining: Record<string, number> | null;
 }
 
+const CONTROLS: [string, string][] = [
+  ['1 · 2 · 3', 'Pick a tower to build'],
+  ['Click', 'Place / inspect a tower'],
+  ['Right-click · Esc', 'Cancel placing or moving'],
+  ['U', 'Upgrade selected tower'],
+  ['R', 'Move selected tower'],
+  ['S S', 'Sell selected tower'],
+  ['T', 'Cycle targeting'],
+  ['Space', 'Start next wave'],
+  ['F', 'Game speed'],
+  ['P', 'Pause'],
+  ['M', 'Mute'],
+  ['?', 'This help'],
+];
+
 // How long the wave-start banner stays up
 const WAVE_BANNER_MS = 2600;
 
@@ -77,6 +93,17 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   waveRemaining,
 }) => {
   const selectedTower = towers.find(t => t.id === gameState.selectedTowerId);
+
+  // Controls reference: the ? button or key opens it, Esc or a click anywhere closes it
+  const [showHelp, setShowHelp] = React.useState(false);
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '?') setShowHelp(v => !v);
+      else if (e.key === 'Escape') setShowHelp(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const relocatingTower = towers.find(t => t.id === gameState.relocatingTowerId);
 
   // --- Responsive arena scaling: grow the fixed-resolution canvas to fill
@@ -131,7 +158,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
     <div className="flex flex-col h-screen overflow-hidden bg-dark-bg text-text-primary">
       {/* TOP BAR */}
       <header
-        className="h-14 shrink-0 relative flex items-center px-5 gap-3 border-b border-white/[0.06]"
+        className="h-14 shrink-0 relative z-[80] flex items-center px-5 gap-3 border-b border-white/[0.06]"
         style={{ background: 'linear-gradient(to bottom, rgba(20,23,30,0.98), rgba(14,17,23,0.99))', backdropFilter: 'blur(24px)' }}
       >
         {/* hairline cyan glow along the bottom edge */}
@@ -313,6 +340,35 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               : <Volume2 className="w-4 h-4 text-white/55 group-hover:text-white transition-colors" />
             }
           </button>
+
+          {/* Controls reference */}
+          <div className="relative">
+            <button
+              onClick={() => setShowHelp(v => !v)}
+              title="Controls (?)"
+              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-all group ${
+                showHelp ? 'border-accent-cyan/50 bg-accent-cyan/10' : 'border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.09] hover:border-white/[0.18]'
+              }`}
+            >
+              <HelpCircle className={`w-4 h-4 transition-colors ${showHelp ? 'text-accent-cyan' : 'text-white/55 group-hover:text-white'}`} />
+            </button>
+            {showHelp && (
+              <>
+                <div className="fixed inset-0 z-[90]" onClick={() => setShowHelp(false)} />
+                <div className="absolute right-0 top-full mt-2 z-[100] w-72 rounded-xl border border-white/[0.1] bg-[#11151b]/95 backdrop-blur-xl shadow-[0_18px_50px_-12px_rgba(0,0,0,0.9)] overflow-hidden">
+                  <div className="px-3.5 py-2.5 border-b border-white/[0.06] text-[10px] font-black uppercase tracking-[0.18em] text-white/75 font-mono">Controls</div>
+                  <div className="px-3.5 py-2.5 space-y-1.5">
+                    {CONTROLS.map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between gap-3 text-[10px] font-mono">
+                        <span className="text-white/55">{v}</span>
+                        <kbd className="shrink-0 px-1.5 py-0.5 rounded border border-white/15 bg-white/[0.05] text-[9px] font-bold text-white/75">{k}</kbd>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Restart */}
           <button

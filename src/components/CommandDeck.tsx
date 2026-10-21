@@ -1,5 +1,5 @@
 import React from 'react';
-import { Crosshair, Target, Bomb, Lock, Radar, Layers, Keyboard, Zap, AlertTriangle, ChevronRight } from 'lucide-react';
+import { Crosshair, Target, Bomb, Lock, Radar, Layers, Zap, AlertTriangle, ChevronRight } from 'lucide-react';
 import { DamageType, GameState, TowerInstance, TowerStats, TowerType, WaveModifier } from '../types';
 import {
   BASE_TOWERS, ENEMY_TYPES, SPECIALIZATIONS, TOWER_STATS,
@@ -343,19 +343,6 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
             </div>
           </div>
         )}
-      </section>
-
-      {/* ── CONTROLS ── */}
-      <section className="shrink-0 mt-auto flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 text-[8px] font-mono text-white/40" aria-label="Keyboard controls">
-        <Keyboard className="w-3 h-3 text-white/30" />
-        {[
-          ['1–3', 'build'], ['U', 'upgrade'], ['R', 'move'], ['S S', 'sell'], ['T', 'target'],
-          ['Space', 'wave'], ['F', 'speed'], ['P', 'pause'], ['M', 'mute'], ['Esc', 'cancel'],
-        ].map(([k, v]) => (
-          <span key={k} className="flex items-center gap-1">
-            <kbd className="px-1 rounded border border-white/15 bg-white/[0.04] font-bold text-white/60">{k}</kbd>{v}
-          </span>
-        ))}
       </section>
     </aside>
   );
