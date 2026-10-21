@@ -213,7 +213,8 @@ export function useGame() {
     const cost = stats.cost; // Branching cost
 
     if (gameState.money >= cost) {
-      setTowers(prev => prev.map(t => t.id === id ? { ...t, type: newType, level: 1, invested: t.invested + cost } : t));
+      // The tower keeps its level: specializing is a step up, not a restart
+      setTowers(prev => prev.map(t => t.id === id ? { ...t, type: newType, invested: t.invested + cost } : t));
       setGameState(prev => ({ ...prev, money: prev.money - cost }));
       createExplosion(tower.x, tower.y, stats.color, 20);
       playSound('specialize', panAt(tower.x, tower.y));

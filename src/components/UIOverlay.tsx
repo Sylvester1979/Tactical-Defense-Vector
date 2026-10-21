@@ -825,6 +825,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: e.color, boxShadow: `0 0 6px ${e.color}` }} />
                           <span className="text-[10px] font-bold text-white/85 truncate">{e.name}</span>
+                          <span className="text-[9px] font-mono font-bold text-accent-amber tabular-nums">×{cfg.counts[key]}</span>
                           <span className="ml-auto text-[9px] font-mono text-white/45 tabular-nums">{hp} HP · {Math.round(e.speed * cfg.speedMult)} SPD</span>
                         </div>
                         {(res.length > 0 || leak > 1) && (
