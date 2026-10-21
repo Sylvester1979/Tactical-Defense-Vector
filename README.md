@@ -61,7 +61,9 @@ npm run dev      # then open http://localhost:3000/prototype.html?zoom=3&x=-6&z=
 
 ## Project layout
 
-- `src/hooks/useGame.ts` — simulation loop (spawning, movement, projectiles, economy)
+- `src/game/sim.ts` — the battle rules as a pure step function (spawning, movement, projectiles, economy)
+- `src/hooks/useGame.ts` — runs the simulation for the UI: game state, building, saving
+- `tools/balance/simulate.ts` — `npm run balance`: plays the waves headless with a bot per strategy; `npm run balance -- efficiency [interval]` compares towers' damage per credit
 - `src/constants.ts` — tower/enemy stats, wave table and shared balance helpers
 - `src/components/GameView3D.tsx`, `src/render3d/` — WebGL renderer (scene sync, models, effects)
 - `src/components/GameCanvas.tsx` — Canvas 2D renderer (fallback)
