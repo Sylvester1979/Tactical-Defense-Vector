@@ -22,6 +22,8 @@ import {
   getWaveConfig,
   getWaveBonus,
   getFireInterval,
+  getMaxLevel,
+  getUpgradeCost,
 } from '../constants';
 import { loadRun, saveRun, clearRun, loadBest, saveBest, hydrateTowers } from '../lib/storage';
 import { checkPlacement } from '../lib/placement';
@@ -188,12 +190,8 @@ export function useGame() {
     const tower = towers.find(t => t.id === id);
     if (!tower) return;
     
-    // Cap: level 3 for base towers (then specialize), level 5 for specializations
-    const isBaseType = tower.type === TowerType.BASIC || tower.type === TowerType.SNIPER || tower.type === TowerType.SPLASH;
-    if (tower.level >= (isBaseType ? 3 : 5)) return;
-
-    const stats = TOWER_STATS[tower.type];
-    const upgradeCost = Math.floor(stats.cost * 0.7 * tower.level);
+    if (tower.level >= getMaxLevel(tower.type)) return;
+    const upgradeCost = getUpgradeCost(tower.type, tower.level);
     
     if (gameState.money >= upgradeCost) {
       setTowers(prev => prev.map(t => t.id === id ? { ...t, level: t.level + 1, invested: t.invested + upgradeCost } : t));

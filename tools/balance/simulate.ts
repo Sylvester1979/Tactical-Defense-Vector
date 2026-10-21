@@ -3,6 +3,7 @@
 //
 //   npm run balance                 # all strategies, 5 seeds each
 //   npm run balance -- mixed 10     # one strategy, 10 seeds
+//   npm run balance -- efficiency 1 # damage per credit, enemies every 1s (0.3 dense, 20 lone targets)
 //
 // The bot is a proxy, not an oracle: it builds towers where they cover the most road, buys
 // whatever adds the most expected damage per credit, and keeps spending through each wave.
@@ -10,23 +11,23 @@
 
 import { TargetingMode, TowerInstance, TowerType } from '../../src/types';
 import {
-  ENEMY_TYPES, INITIAL_LIVES, INITIAL_MONEY, PATH, TOWER_STATS, WAVES,
-  getEnemyHealth, getWaveBonus, getWaveConfig,
+  BASE_TOWERS, ENEMY_TYPES, INITIAL_LIVES, INITIAL_MONEY, PATH, TOWER_STATS, WAVES,
+  getEnemyHealth, getMaxLevel, getUpgradeCost, getWaveBonus, getWaveConfig, isBaseTower,
 } from '../../src/constants';
 import { checkPlacement } from '../../src/lib/placement';
 import { SimState, getDistance, idleWave, startWaveRun, step, PATH_LENGTH, towerDamage, towerRange } from '../../src/game/sim';
 import { getFireInterval } from '../../src/constants';
 
 const DT = 1 / 60;
-const BASE = [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH];
+const BASE = BASE_TOWERS;
 const SPECS: Record<string, TowerType[]> = {
   [TowerType.BASIC]: [TowerType.VULCAN_TITAN, TowerType.VULCAN_STING],
   [TowerType.SNIPER]: [TowerType.RAILGUN_PIERCER, TowerType.RAILGUN_HYPER],
   [TowerType.SPLASH]: [TowerType.MORTAR_CRYO, TowerType.MORTAR_BOMBER],
 };
-const isBase = (t: TowerType) => BASE.includes(t);
-const upgradeCost = (t: TowerInstance) => Math.floor(TOWER_STATS[t.type].cost * 0.7 * t.level);
-const maxLevel = (t: TowerInstance) => (isBase(t.type) ? 3 : 5);
+const isBase = isBaseTower;
+const upgradeCost = (t: TowerInstance) => getUpgradeCost(t.type, t.level);
+const maxLevel = (t: TowerInstance) => getMaxLevel(t.type);
 
 const mulberry32 = (seed: number) => () => {
   seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
@@ -213,14 +214,14 @@ const run = (strat: Strategy, seed: number, lastWave = WAVES.length) => {
 // Damage actually landed (misses, road coverage, splash and resistances included) per credit.
 const investedFor = (type: TowerType, level: number) => {
   const ups = (t: TowerType, upto: number) =>
-    Array.from({ length: upto - 1 }, (_, i) => Math.floor(TOWER_STATS[t].cost * 0.7 * (i + 1))).reduce((a, b) => a + b, 0);
+    Array.from({ length: upto - 1 }, (_, i) => getUpgradeCost(t, i + 1)).reduce((a, b) => a + b, 0);
   if (isBase(type)) return TOWER_STATS[type].cost + ups(type, level);
   // Specializing keeps the level: base to L3, the specialization, then upgrades from L3
   const base = BASE.find(b => SPECS[b].includes(type))!;
   return TOWER_STATS[base].cost + ups(base, 3) + TOWER_STATS[type].cost + ups(type, level) - ups(type, 3);
 };
 
-const damageLanded = (type: TowerType, level: number, kind: string, interval: number) => {
+const damageLanded = (type: TowerType, level: number, kind: string, interval: number, count = 30) => {
   const range = towerRange({ type, level });
   let spot = SPOTS[0], best = -1;
   for (const sp of SPOTS) { const c = coverage(sp.x, sp.y, range); if (c > best) { best = c; spot = sp; } }
@@ -229,8 +230,8 @@ const damageLanded = (type: TowerType, level: number, kind: string, interval: nu
     waveNumber: 1, enemies: [], projectiles: [],
     towers: [{ id: 'x', type, baseType: isBase(type) ? type : BASE.find(b => SPECS[b].includes(type))!, x: spot.x, y: spot.y, level, lastFired: 0, targetId: null,
       currentAngle: 0, targetingMode: TargetingMode.FIRST, invested: 0 }],
-    wave: { config: { ...getWaveConfig(1), count: 30, interval, enemyTypes: [kind], counts: { [kind]: 30 }, spawns: Array(30).fill(kind) },
-      toSpawn: 30, spawnTimer: 0, active: true },
+    wave: { config: { ...getWaveConfig(1), count, interval, enemyTypes: [kind], counts: { [kind]: count }, spawns: Array(count).fill(kind) },
+      toSpawn: count, spawnTimer: 0, active: true },
   };
   // Enemies never die: count the damage each step, then top their health back up
   const HUGE = 1e12;
@@ -247,17 +248,19 @@ const damageLanded = (type: TowerType, level: number, kind: string, interval: nu
   return { dealt, coverage: best };
 };
 
+// A long interval means lone targets: 3 enemies, one at a time (how bosses arrive)
 const efficiencyReport = (interval: number) => {
+  const count = interval >= 10 ? 3 : 30;
   const kinds = Object.keys(ENEMY_TYPES);
   const cases: [TowerType, number][] = [
     ...BASE.flatMap(t => [[t, 1], [t, 3]] as [TowerType, number][]),
     ...Object.values(SPECS).flat().flatMap(t => [[t, 3], [t, 5]] as [TowerType, number][]),
   ];
-  console.log(`Damage landed per credit invested, one tower vs 30 unkillable enemies spawning every ${interval}s, best spot for its range`);
+  console.log(`Damage landed per credit invested, one tower vs ${count} unkillable enemies spawning every ${interval}s, best spot for its range`);
   console.log('tower               invested  ' + kinds.map(k => k.padStart(11)).join(''));
   for (const [type, level] of cases) {
     const cost = investedFor(type, level);
-    const cells = kinds.map(k => (damageLanded(type, level, k, interval).dealt / cost).toFixed(1).padStart(11));
+    const cells = kinds.map(k => (damageLanded(type, level, k, interval, count).dealt / cost).toFixed(1).padStart(11));
     console.log(`${(type + ' L' + level).padEnd(20)}${String(cost).padStart(8)}  ${cells.join('')}`);
   }
 };

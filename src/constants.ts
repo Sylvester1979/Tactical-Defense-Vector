@@ -40,7 +40,7 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     type: TowerType.SNIPER,
     damageType: DamageType.ENERGY,
     name: 'Railgun',
-    description: 'Long-range precision cannon. Low fire rate, extreme single-target damage. Bypasses energy resistances on most enemies.',
+    description: 'Long-range precision cannon. Low fire rate, extreme single-target damage. Struggles against energy-resistant Shock Weavers.',
     range: 300,
     damage: 50,
     fireRate: 0.35,
@@ -65,13 +65,14 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     type: TowerType.VULCAN_TITAN,
     damageType: DamageType.KINETIC,
     name: 'Titan Vulcan',
-    description: 'Heavy kinetic platform. Trades range for raw stopping power. Best sustained DPS against armored single targets.',
+    description: 'Heavy kinetic platform with armour-piercing rounds: enemy armour does not reduce its damage. The answer to Bastions and Dreadnoughts.',
     range: 170,
     damage: 15,
     fireRate: 3.5,
     cost: 300,
     color: '#60a5fa',
     projectileSpeed: 500,
+    armorPiercing: true,
   },
   [TowerType.VULCAN_STING]: {
     type: TowerType.VULCAN_STING,
@@ -128,7 +129,7 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     type: TowerType.MORTAR_BOMBER,
     damageType: DamageType.FIRE,
     name: 'Heavy Bomber',
-    description: 'Incendiary payload ignites all enemies in a wide blast. Burning deals 12 dmg/sec for 4 seconds after impact — damage stacks with direct hit.',
+    description: 'Incendiary payload ignites all enemies in a wide blast. Burning deals 18 dmg/sec for 4 seconds on top of the direct hit; both grow with level.',
     range: 150,
     damage: 50,
     fireRate: 0.35,
@@ -136,7 +137,7 @@ export const TOWER_STATS: Record<TowerType, TowerStats> = {
     color: '#f87171',
     projectileSpeed: 220,
     splashRadius: 100,
-    burnDamage: 12,
+    burnDamage: 18,
     burnDuration: 4,
   },
 };
@@ -273,10 +274,23 @@ export const getWaveConfig = (waveNumber: number): WaveConfig => {
 // Enemy health grows by this share of its base per wave, from wave 3 on
 export const HEALTH_GROWTH = 0.22;
 
+// Overall enemy toughness: the Normal difficulty. Difficulty levels will scale from here.
+export const DIFFICULTY_HEALTH = 1.10;
+
 export const getEnemyHealth = (type: string, waveNumber: number, healthMult: number) =>
-  ENEMY_TYPES[type].health * (1 + Math.max(0, waveNumber - 2) * HEALTH_GROWTH) * (isBoss(type) ? 1 : healthMult);
+  ENEMY_TYPES[type].health * DIFFICULTY_HEALTH * (1 + Math.max(0, waveNumber - 2) * HEALTH_GROWTH) * (isBoss(type) ? 1 : healthMult);
 
 export const getWaveBonus = (waveNumber: number) => 120 + (waveNumber - 1) * 25;
+
+// Base towers are built directly and cap at level 3; specializations take them to level 5
+export const BASE_TOWERS = [TowerType.BASIC, TowerType.SNIPER, TowerType.SPLASH];
+export const isBaseTower = (type: TowerType) => BASE_TOWERS.includes(type);
+export const getMaxLevel = (type: TowerType) => (isBaseTower(type) ? 3 : 5);
+
+// Upgrades cost a share of the tower's price per current level; specializations are pricier
+// towers, so their upgrades take a smaller share to keep levels 4 and 5 worth buying
+export const getUpgradeCost = (type: TowerType, level: number) =>
+  Math.floor(TOWER_STATS[type].cost * (isBaseTower(type) ? 0.7 : 0.5) * level);
 
 // Seconds between shots for a tower type at a given level (+20% fire rate per level)
 export const getFireInterval = (type: TowerType, level: number) =>
