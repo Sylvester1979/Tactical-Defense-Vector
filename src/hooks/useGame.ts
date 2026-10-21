@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   TowerInstance,
   EnemyInstance,
@@ -7,10 +7,8 @@ import {
   TowerType,
   TargetingMode,
   WaveModifier,
-  Point,
   Particle,
   FloatingText,
-  DamageType
 } from '../types';
 import { 
   CANVAS_WIDTH, 
@@ -19,39 +17,19 @@ import {
   INITIAL_LIVES, 
   PATH, 
   TOWER_STATS, 
-  ENEMY_TYPES, 
   RELOCATION_FEE,
   getSellValue,
   getWaveConfig,
-  getEnemyHealth,
   getWaveBonus,
   getFireInterval,
-  WaveConfig
 } from '../constants';
 import { loadRun, saveRun, clearRun, loadBest, saveBest, hydrateTowers } from '../lib/storage';
 import { checkPlacement } from '../lib/placement';
-import { playSound, SoundName } from '../lib/audio';
+import { playSound } from '../lib/audio';
+import { step, startWaveRun, idleWave, SimEvents, SimState, WaveRun } from '../game/sim';
 
 // Stereo position of a world point: left/right across the isometric screen
 const panAt = (x: number, y: number) => Math.max(-1, Math.min(1, ((x - y) * 0.6) / 500)) * 0.7;
-
-// Firing sound per tower type
-const FIRE_SOUND: Record<TowerType, SoundName> = {
-  [TowerType.BASIC]: 'vulcan', [TowerType.VULCAN_STING]: 'vulcan', [TowerType.VULCAN_TITAN]: 'vulcanHeavy',
-  [TowerType.SNIPER]: 'railgun', [TowerType.RAILGUN_PIERCER]: 'railgun', [TowerType.RAILGUN_HYPER]: 'railgunHyper',
-  [TowerType.SPLASH]: 'mortar', [TowerType.MORTAR_BOMBER]: 'mortar', [TowerType.MORTAR_CRYO]: 'cryoLaunch',
-};
-
-// Mortar shell apex: proportional to throw distance, clamped
-const MORTAR_ARC_PER_DIST = 0.45;
-const MORTAR_ARC_MIN = 40;
-const MORTAR_ARC_MAX = 90;
-
-// Fraction of the flight covered, given the distance still left to the target
-const flightProgress = (p: Projectile, remaining: number) => {
-  const total = Math.hypot(p.targetX - p.startX, p.targetY - p.startY);
-  return total > 0 ? Math.min(1, Math.max(0, 1 - remaining / total)) : 1;
-};
 
 // Reward labels merge when a new one spawns this close to one still young enough
 const MONEY_MERGE_RADIUS = 60;
@@ -102,11 +80,9 @@ export function useGame() {
 
   const requestRef = useRef<number>(null);
   const lastTimeRef = useRef<number>(0);
-  const spawnTimerRef = useRef<number>(0);
-  const enemiesToSpawnRef = useRef<number>(0);
-  const currentWaveRef = useRef<WaveConfig | null>(null);
-  // Mirrors waveActive synchronously so multiple sim steps per frame can't double-award the wave bonus
-  const waveActiveRef = useRef(false);
+  // Spawn queue and progress of the current wave (synchronous, so several sim steps per frame
+  // can't double-award the wave bonus)
+  const waveRef = useRef<WaveRun>(idleWave());
 
   // Helper: Create particles
   const createExplosion = useCallback((x: number, y: number, color: string, count: number = 10) => {
@@ -158,37 +134,12 @@ export function useGame() {
     });
   }, []);
 
-  // Helper: Distance between two points
-  const getDistance = (p1: Point, p2: Point) => Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
-
-  // Helper: Move along path
-  const moveOnPath = (dist: number): Point => {
-    let d = 0;
-    for (let i = 0; i < PATH.length - 1; i++) {
-      const p1 = PATH[i];
-      const p2 = PATH[i + 1];
-      const segmentLen = getDistance(p1, p2);
-      if (d + segmentLen >= dist) {
-        const ratio = (dist - d) / segmentLen;
-        return {
-          x: p1.x + (p2.x - p1.x) * ratio,
-          y: p1.y + (p2.y - p1.y) * ratio,
-        };
-      }
-      d += segmentLen;
-    }
-    return PATH[PATH.length - 1];
-  };
-
-  const getPathLength = () => {
-    let d = 0;
-    for (let i = 0; i < PATH.length - 1; i++) {
-      d += getDistance(PATH[i], PATH[i + 1]);
-    }
-    return d;
-  };
-
-  const pathLength = getPathLength();
+  // Sounds, particles and labels the simulation asks for
+  const simEvents = useMemo<SimEvents>(() => ({
+    sound: (name, x, y) => playSound(name, x === undefined || y === undefined ? 0 : panAt(x, y)),
+    explosion: createExplosion,
+    text: createFloatingText,
+  }), [createExplosion, createFloatingText]);
 
   const startWave = useCallback(() => {
     if (waveActive || gameState.isGameOver) return;
@@ -196,10 +147,7 @@ export function useGame() {
     const waveNumber = (gameState.waveNumber || 0) + 1;
     const wave = getWaveConfig(waveNumber);
 
-    enemiesToSpawnRef.current = wave.count;
-    currentWaveRef.current = wave;
-    spawnTimerRef.current = 0;
-    waveActiveRef.current = true;
+    waveRef.current = startWaveRun(waveNumber);
     setWaveActive(true);
     playSound('waveStart');
     if (wave.enemyTypes.includes('COLOSSUS')) window.setTimeout(() => playSound('bossWarn'), 650);
@@ -320,22 +268,6 @@ export function useGame() {
     createFloatingText(x, y - 20, "REDEPLOYED", "#00f2ff");
   }, [towers, createFloatingText, createExplosion]);
 
-  const selectTarget = (inRange: EnemyInstance[], mode: TargetingMode, tower: TowerInstance): EnemyInstance | undefined => {
-    if (inRange.length === 0) return undefined;
-    switch (mode) {
-      case TargetingMode.FIRST:
-        return inRange.reduce((a, b) => b.distanceTraveled > a.distanceTraveled ? b : a);
-      case TargetingMode.LAST:
-        return inRange.reduce((a, b) => b.distanceTraveled < a.distanceTraveled ? b : a);
-      case TargetingMode.STRONGEST:
-        return inRange.reduce((a, b) => b.health > a.health ? b : a);
-      case TargetingMode.WEAKEST:
-        return inRange.reduce((a, b) => b.health < a.health ? b : a);
-      case TargetingMode.CLOSEST:
-        return inRange.reduce((a, b) => getDistance(tower, b) < getDistance(tower, a) ? b : a);
-    }
-  };
-
   const update = useCallback((time: number) => {
     if (lastTimeRef.current !== undefined) {
       const dt = Math.min(0.05, (time - lastTimeRef.current) / 1000); // Bulletproof dt cap
@@ -343,322 +275,44 @@ export function useGame() {
       // so fast projectiles can't tunnel past their collision radius
       const steps = gameStateRef.current.gameSpeed || 1;
 
-      for (let step = 0; step < steps; step++) {
+      for (let i = 0; i < steps; i++) {
         const currentGameState = gameStateRef.current;
       
         if (!currentGameState.isPaused && !currentGameState.isGameOver) {
-          let currentEnemies = [...enemiesRef.current];
-          let currentTowers = [...towersRef.current];
-          let currentProjectiles = [...projectilesRef.current];
-          let moneyEarned = 0;
-          let livesLost = 0;
+          const sim: SimState = {
+            waveNumber: currentGameState.waveNumber,
+            enemies: enemiesRef.current,
+            towers: towersRef.current,
+            projectiles: projectilesRef.current,
+            wave: waveRef.current,
+          };
+          const { moneyEarned, livesLost, waveCleared } = step(sim, dt, simEvents);
           let newShake = currentGameState.shakeTime;
-
-          // 1. Spawning
-          if (enemiesToSpawnRef.current > 0 && currentWaveRef.current) {
-            spawnTimerRef.current += dt;
-            const wave = currentWaveRef.current;
-            // Carry the leftover time over (and spawn more than one per step if needed)
-            // so dense waves keep their scripted spawn rate instead of drifting slower
-            while (enemiesToSpawnRef.current > 0 && spawnTimerRef.current >= wave.interval) {
-              spawnTimerRef.current -= wave.interval;
-              enemiesToSpawnRef.current--;
-
-              const randomType = wave.enemyTypes[Math.floor(Math.random() * wave.enemyTypes.length)];
-              const baseHealth = getEnemyHealth(randomType, currentGameState.waveNumber || 1, wave.healthMult);
-              currentEnemies.push({
-                id: `e-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
-                type: randomType,
-                health: baseHealth,
-                maxHealth: baseHealth,
-                x: PATH[0].x,
-                y: PATH[0].y,
-                pathIndex: 0,
-                distanceTraveled: 0,
-                lastHitTime: 0,
-                hitAngle: 0,
-                slowDuration: 0,
-                slowMultiplier: 1,
-                burnDuration: 0,
-                burnDamagePerSec: 0,
-                speedMultiplier: wave.speedMult,
-                rewardMultiplier: wave.rewardMult,
-              });
-            }
-          }
-
-          // 2. Movement & Path Logic
-          currentEnemies = currentEnemies.map(enemy => {
-            const enemyType = ENEMY_TYPES[enemy.type];
-          
-            let slowMult = 1;
-            let newSlowDuration = Math.max(0, enemy.slowDuration - dt);
-            if (newSlowDuration > 0) {
-              slowMult = enemy.slowMultiplier;
-            }
-
-            // Damage Over Time (Burn)
-            let currentHealth = enemy.health;
-            let newBurnDuration = Math.max(0, enemy.burnDuration - dt);
-            if (newBurnDuration > 0) {
-              currentHealth -= enemy.burnDamagePerSec * (enemyType.resistances?.[DamageType.FIRE] ?? 1) * dt;
-            }
-
-            const waveSpeedMult = enemy.speedMultiplier ?? 1;
-            const newDist = enemy.distanceTraveled + (enemyType.speed * waveSpeedMult * slowMult) * dt;
-            const pos = moveOnPath(newDist);
-            return { 
-              ...enemy, 
-              health: currentHealth,
-              distanceTraveled: newDist, 
-              x: pos.x, 
-              y: pos.y, 
-              slowDuration: newSlowDuration,
-              burnDuration: newBurnDuration
-            };
-          }).filter(enemy => {
-             // An enemy that burned to death on the exit tile counts as a kill, not a leak
-             if (enemy.distanceTraveled >= pathLength && enemy.health > 0) {
-               livesLost += ENEMY_TYPES[enemy.type].leakDamage ?? 1;
-               newShake = 0.3;
-               return false;
-             }
-             return true;
-          });
-
-          if (livesLost > 0) {
-            const core = PATH[PATH.length - 1];
-            createFloatingText(core.x, core.y, `−${livesLost}`, '#ff4d4d');
-            playSound('leak', panAt(core.x, core.y));
-          }
-
-          // 3. Projectiles (Collision & Movement)
-          const nextProjs: Projectile[] = [];
-          currentProjectiles.forEach(p => {
-            const dx = p.targetX - p.x;
-            const dy = p.targetY - p.y;
-            const distToDest = Math.sqrt(dx * dx + dy * dy);
-            const moveStep = p.speed * dt;
-          
-            let collisionEnemy: EnemyInstance | null = null;
-            let targetsHit: EnemyInstance[] = [];
-
-            // Lobbed shells fly over everything and only detonate where they land
-            for (const enemy of (p.arcHeight ? [] : currentEnemies)) {
-              if (p.hitEnemyIds?.includes(enemy.id)) continue;
-            
-              const d = getDistance(p, enemy);
-              if (d < 24) { // Wider radius compensates for frame-rate discretization
-                if (p.isPiercing) {
-                  targetsHit.push(enemy);
-                  p.hitEnemyIds = [...(p.hitEnemyIds || []), enemy.id];
-                } else {
-                  collisionEnemy = enemy;
-                  break;
-                }
-              }
-            }
-
-            const hasHit = collisionEnemy || targetsHit.length > 0 || moveStep >= distToDest;
-
-            if (hasHit) {
-              const hitX = collisionEnemy ? collisionEnemy.x : (targetsHit.length > 0 ? targetsHit[0].x : p.targetX);
-              const hitY = collisionEnemy ? collisionEnemy.y : (targetsHit.length > 0 ? targetsHit[0].y : p.targetY);
-            
-              if (collisionEnemy || targetsHit.length > 0 || p.splashRadius) {
-                createExplosion(hitX, hitY, TOWER_STATS[p.type].color, p.splashRadius ? 15 : 6);
-              }
-              if (p.splashRadius) playSound(p.slowEffect ? 'freeze' : 'explosion', panAt(hitX, hitY));
-            
-              const processHit = (e: EnemyInstance, dmg: number) => {
-                const enemyType = ENEMY_TYPES[e.type];
-                const resistance = enemyType.resistances?.[p.damageType] ?? 1;
-                const finalDmg = dmg * resistance;
-
-                const angle = Math.atan2(e.y - p.y, e.x - p.x);
-                let nextE = { ...e, health: e.health - finalDmg, lastHitTime: Date.now(), hitAngle: angle };
-              
-                if (p.slowEffect) {
-                  nextE.slowDuration = 2.0; // 2 seconds of slow
-                  nextE.slowMultiplier = p.slowEffect;
-                }
-
-                if (p.burnDamage && p.burnDuration) {
-                  nextE.burnDuration = p.burnDuration;
-                  nextE.burnDamagePerSec = p.burnDamage;
-                }
-
-                return nextE;
-              };
-
-              if (p.splashRadius) {
-                currentEnemies = currentEnemies.map(e => {
-                  const d = Math.sqrt((e.x - hitX) ** 2 + (e.y - hitY) ** 2);
-                  if (d <= p.splashRadius!) {
-                    return processHit(e, p.damage);
-                  }
-                  return e;
-                });
-              } else if (collisionEnemy) {
-                currentEnemies = currentEnemies.map(e => (e.id === collisionEnemy!.id ? processHit(e, p.damage) : e));
-              } else if (targetsHit.length > 0) {
-                const hitIds = targetsHit.map(t => t.id);
-                currentEnemies = currentEnemies.map(e => (hitIds.includes(e.id) ? processHit(e, p.damage) : e));
-              }
-
-              if (!p.isPiercing || moveStep >= distToDest) {
-                 // Remove projectile
-              } else {
-                nextProjs.push({
-                  ...p,
-                  x: p.x + dx * (moveStep / distToDest),
-                  y: p.y + dy * (moveStep / distToDest),
-                  progress: flightProgress(p, distToDest - moveStep)
-                });
-              }
-            } else {
-              const ratio = moveStep / distToDest;
-              const progress = flightProgress(p, distToDest - moveStep);
-              // Straight shots ease toward targetZ; lobbed shells follow a parabola over the line
-              const z = p.arcHeight
-                ? p.startZ + (p.targetZ - p.startZ) * progress + p.arcHeight * 4 * progress * (1 - progress)
-                : p.z + (p.targetZ - p.z) * ratio;
-              nextProjs.push({
-                ...p,
-                x: p.x + (p.targetX - p.x) * ratio,
-                y: p.y + (p.targetY - p.y) * ratio,
-                z,
-                progress,
-              });
-            }
-          });
-          currentProjectiles = nextProjs;
-
-          // 4. Cleanup & Rewards
-          currentEnemies = currentEnemies.filter(e => {
-            if (e.health <= 0) {
-              const type = ENEMY_TYPES[e.type];
-              const reward = Math.round(type.reward * (e.rewardMultiplier ?? 1));
-              moneyEarned += reward;
-              createExplosion(e.x, e.y, type.color, 12);
-              playSound(e.type === 'COLOSSUS' ? 'deathBoss' : 'death', panAt(e.x, e.y));
-              createFloatingText(e.x, e.y, `+$${reward}`, "#00f2ff");
-              return false;
-            }
-            return true;
-          });
-
-          // 5. Tower Logic (Targeting & Firing)
-          currentTowers = currentTowers.map(tower => {
-            const stats = TOWER_STATS[tower.type];
-            const fireInterval = getFireInterval(tower.type, tower.level);
-            let nextLastFired = tower.lastFired + dt;
-          
-            // Efficient Targeted Selection
-            const range = stats.range * (1 + (tower.level - 1) * 0.1);
-            const inRange = currentEnemies.filter(e => getDistance(tower, e) <= range);
-            const target = selectTarget(inRange, tower.targetingMode, tower);
-
-            let currentAngle = tower.currentAngle || -Math.PI / 2;
-            if (target) {
-              const targetAngle = Math.atan2(target.y - tower.y, target.x - tower.x);
-              let angleDiff = targetAngle - currentAngle;
-              while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-              while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-              currentAngle += angleDiff * dt * 14;
-            }
-
-            if (target && nextLastFired >= fireInterval) {
-              const enemyType = ENEMY_TYPES[target.type];
-              const dist = getDistance(tower, target);
-              const targetSpeedMult = target.speedMultiplier ?? 1;
-              const targetSlowMult = target.slowDuration > 0 ? target.slowMultiplier : 1;
-              const actualSpeed = enemyType.speed * targetSpeedMult * targetSlowMult;
-              // Iterative intercept: 3 passes converge for any enemy speed
-              let t = dist / stats.projectileSpeed;
-              let predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * t, pathLength));
-              for (let iter = 0; iter < 2; iter++) {
-                t = getDistance(tower, predPos) / stats.projectileSpeed;
-                predPos = moveOnPath(Math.min(target.distanceTraveled + actualSpeed * t, pathLength));
-              }
-
-              const startX = tower.x + Math.cos(currentAngle) * 12;
-              const startY = tower.y + Math.sin(currentAngle) * 12;
-              let destX = predPos.x;
-              let destY = predPos.y;
-              if (stats.isPiercing) {
-                // Piercing rounds keep flying through the aim point out to max range
-                const aimDist = Math.max(1, getDistance({ x: startX, y: startY }, predPos));
-                destX = startX + ((predPos.x - startX) / aimDist) * range;
-                destY = startY + ((predPos.y - startY) / aimDist) * range;
-              }
-
-              const startZ = 40 + tower.level * 2;
-              const isLobbed = tower.baseType === TowerType.SPLASH;
-              currentProjectiles.push({
-                id: `pr-${Math.random().toString(36).substr(2, 5)}-${Date.now()}`,
-                x: startX,
-                y: startY,
-                z: startZ,
-                startX,
-                startY,
-                startZ,
-                arcHeight: isLobbed
-                  ? Math.min(MORTAR_ARC_MAX, Math.max(MORTAR_ARC_MIN, Math.hypot(destX - startX, destY - startY) * MORTAR_ARC_PER_DIST))
-                  : undefined,
-                targetX: destX,
-                targetY: destY,
-                targetZ: 15,
-                damage: stats.damage * (1 + (tower.level - 1) * 0.45),
-                damageType: stats.damageType,
-                speed: stats.projectileSpeed,
-                type: tower.type,
-                splashRadius: stats.splashRadius,
-                isPiercing: stats.isPiercing,
-                slowEffect: stats.slowEffect,
-                burnDamage: stats.burnDamage,
-                burnDuration: stats.burnDuration,
-                progress: 0,
-                hitEnemyIds: [],
-              });
-              nextLastFired -= fireInterval; // Preserve overflow for accurate ROF
-              playSound(FIRE_SOUND[tower.type], panAt(tower.x, tower.y));
-            }
-            // Idle time doesn't bank shots: a tower without a target just stays ready for one.
-            // (Overflow below one interval is kept, so the rate of fire stays exact while firing.)
-            nextLastFired = Math.min(nextLastFired, fireInterval);
-            return { ...tower, lastFired: nextLastFired, targetId: target?.id || null, currentAngle };
-          });
-
-          // 6. Global Housekeeping
+          if (livesLost > 0) newShake = 0.3;
           if (newShake > 0) newShake = Math.max(0, newShake - dt);
-        
-          // --- CRITICAL: IMMEDIATE REF SYNC ---
-          // This eliminates the 1-frame "React lag" that previously broke fire rates and collision logic.
-          enemiesRef.current = currentEnemies;
-          towersRef.current = currentTowers;
-          projectilesRef.current = currentProjectiles;
 
-          // Final Sync to local states
-          setEnemies(currentEnemies);
-          setTowers(currentTowers);
-          setProjectiles(currentProjectiles);
-        
+          // Refs first, so the next step this frame sees the result (no React lag)
+          enemiesRef.current = sim.enemies;
+          towersRef.current = sim.towers;
+          projectilesRef.current = sim.projectiles;
+          setEnemies(sim.enemies);
+          setTowers(sim.towers);
+          setProjectiles(sim.projectiles);
+
           if (moneyEarned !== 0 || livesLost !== 0 || newShake !== currentGameState.shakeTime) {
             const nextLives = Math.max(0, currentGameState.lives - livesLost);
-            const nextMoney = currentGameState.money + moneyEarned;
             const updatedGameState = {
               ...currentGameState,
-              money: nextMoney,
+              money: currentGameState.money + moneyEarned,
               lives: nextLives,
               shakeTime: newShake,
-              isGameOver: nextLives <= 0
+              isGameOver: nextLives <= 0,
             };
             setGameState(updatedGameState);
             gameStateRef.current = updatedGameState;
           }
 
-          if (currentEnemies.length === 0 && enemiesToSpawnRef.current === 0 && waveActiveRef.current) {
+          if (waveCleared) {
             const waveBonus = getWaveBonus(currentGameState.waveNumber);
             const updatedState = {
               ...gameStateRef.current,
@@ -666,14 +320,13 @@ export function useGame() {
               isWaveReady: true,
               currentWaveModifier: WaveModifier.NONE,
             };
-            waveActiveRef.current = false;
             setWaveActive(false);
             setGameState(updatedState);
             gameStateRef.current = updatedState;
             createFloatingText(PATH[PATH.length - 1].x, PATH[PATH.length - 1].y, `Wave Bonus: +$${waveBonus}`, "#10b981");
             playSound('waveClear');
           }
-        
+
           // Ephemeral Update
           setParticles(prev => prev.map(p => ({
               ...p,
@@ -693,7 +346,7 @@ export function useGame() {
     }
     lastTimeRef.current = time;
     requestRef.current = requestAnimationFrame(update);
-  }, [pathLength, createExplosion, createFloatingText]); // Stable dependencies
+  }, [simEvents, createFloatingText]); // Stable dependencies
 
 
   useEffect(() => {
@@ -762,8 +415,7 @@ export function useGame() {
     setParticles([]);
     setFloatingTexts([]);
     setWaveActive(false);
-    waveActiveRef.current = false;
-    enemiesToSpawnRef.current = 0;
+    waveRef.current = idleWave();
   };
 
   return {
