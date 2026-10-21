@@ -42,7 +42,7 @@ const ENTRY_LABEL = toWorld(PATH[0].x, PATH[0].y).setY(8.4);
 const CORE_LABEL = CORE.clone().setY(12.4);
 
 // Rough top of each hull above its origin, for health bars
-const HULL_TOP: Record<string, number> = { SCOUT: 0.8, INTERCEPTOR: 0.7, PHANTOM: 0.9, GUARDIAN: 2.7, COLOSSUS: 4.2 };
+const HULL_TOP: Record<string, number> = { SCOUT: 0.8, INTERCEPTOR: 0.7, PHANTOM: 0.9, GUARDIAN: 2.7, COLOSSUS: 5.6 };
 // Enemies are drawn larger than life so they stay readable at the full-field zoom; the small,
 // fast flyers get the biggest boost
 const ENEMY_SCALE: Record<string, number> = { SCOUT: 1.3, INTERCEPTOR: 1.35, PHANTOM: 1.25, GUARDIAN: 1.2, COLOSSUS: 1.1 };

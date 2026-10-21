@@ -111,41 +111,64 @@ gun = []
 breech = box((1.6, 0.95, 0.7), loc=(X0 + 0.1, 0, PZ), mat=ARMOR, bevel=0.08, segments=3, angle=30)
 cut(breech, box((0.8, 1.2, 0.6), loc=(X0 + 1.0, 0, PZ + 0.5), rot=(0, math.radians(-30), 0)))
 cut(breech, box((0.8, 1.2, 0.6), loc=(X0 - 0.85, 0, PZ + 0.45), rot=(0, math.radians(35), 0)))
-for k in range(3):  # cooling slots on top
-    cut(breech, box((0.06, 0.6, 0.2), loc=(X0 - 0.2 + k * 0.18, 0, PZ + 0.38)))
+cut(breech, box((0.5, 0.42, 0.2), loc=(X0 - 0.25, 0, PZ + 0.38)))  # recess for the heat-sink fins
 gun.append(breech)
-# Glowing charge cells on the breech sides
+# Heat-sink fins standing in the recess on top of the breech
+for k in range(5):
+    gun.append(box((0.04, 0.38, 0.16), loc=(X0 - 0.45 + k * 0.1, 0, PZ + 0.3), mat=STEEL, bevel=0.008, segments=1))
+# Side armour: a lighter panel with bolts over a glowing charge cell
 for side in (-1, 1):
-    gun.append(box((0.9, 0.04, 0.12), loc=(X0 + 0.05, side * 0.48, PZ - 0.08), mat=GLOW))
-    gun.append(box((0.98, 0.05, 0.2), loc=(X0 + 0.05, side * 0.47, PZ - 0.08), mat=ARMOR_DARK, bevel=0.015))
+    gun.append(box((0.9, 0.04, 0.12), loc=(X0 + 0.05, side * 0.48, PZ - 0.12), mat=GLOW))
+    gun.append(box((0.98, 0.05, 0.2), loc=(X0 + 0.05, side * 0.47, PZ - 0.12), mat=ARMOR_DARK, bevel=0.015))
+    # (kept inside the cradle plates at y ±0.49, which the gun slides between)
+    gun.append(box((0.8, 0.02, 0.24), loc=(X0 - 0.05, side * 0.475, PZ + 0.12), mat=ARMOR_LIGHT, bevel=0.008, segments=1))
+    for bx in (-0.38, 0.28):
+        for bz in (0.03, 0.21):
+            gun.append(cylinder(0.022, 0.012, loc=(X0 + bx, side * 0.484, PZ + bz), rot=(math.pi / 2, 0, 0), verts=6, mat=STEEL))
+# Power coupling on the back face, where the capacitor feeds come in
+gun.append(cylinder(0.2, 0.12, loc=(X0 - 0.72, 0, PZ - 0.02), rot=(0, math.pi / 2, 0), verts=24, mat=STEEL, bevel=0.02, segments=2))
+gun.append(cylinder(0.11, 0.06, loc=(X0 - 0.79, 0, PZ - 0.02), rot=(0, math.pi / 2, 0), verts=20, mat=GLOW))
+
+# Twin rails, spread apart so the channel between them shows from the game camera: dark rails
+# with bright steel top edges, and a glowing plasma channel running the whole length between them
 RAIL_X0, RAIL_X1 = 0.75, 4.4
 rail_len = RAIL_X1 - RAIL_X0
+RAIL_Y, RAIL_W, RAIL_H = 0.35, 0.17, 0.4
 for side in (-1, 1):
-    y = side * 0.24
-    rail = box((rail_len, 0.16, 0.34), loc=(X0 + RAIL_X0 + rail_len / 2, y, PZ), mat=GUN, bevel=0.03, segments=2)
-    cut(rail, box((0.5, 0.4, 0.5), loc=(X0 + RAIL_X1 + 0.08, y, PZ + 0.3), rot=(0, math.radians(-45), 0)))  # chamfered tip
-    for k in range(4):  # lightening slots on the outer face, between coils
-        cut(rail, box((0.36, 0.06, 0.12), loc=(X0 + 1.65 + k * 0.7, y + side * 0.08, PZ)))
+    y = side * RAIL_Y
+    rail = box((rail_len, RAIL_W, RAIL_H), loc=(X0 + RAIL_X0 + rail_len / 2, y, PZ), mat=GUN, bevel=0.03, segments=2)
+    cut(rail, box((0.5, 0.4, 0.6), loc=(X0 + RAIL_X1 + 0.1, y, PZ + 0.36), rot=(0, math.radians(-45), 0)))  # chamfered tip
+    for k in range(3):  # lightening slots on the outer face, between the coils
+        cut(rail, box((0.42, 0.06, 0.14), loc=(X0 + 1.62 + k * 0.85, y + side * RAIL_W / 2, PZ - 0.02)))
     gun.append(rail)
-    # Conductor strip on the inner face
-    gun.append(box((rail_len - 0.25, 0.03, 0.14), loc=(X0 + RAIL_X0 + rail_len / 2 - 0.1, side * 0.155, PZ), mat=STEEL))
-# Plasma core between the rails
-gun.append(box((rail_len - 0.4, 0.07, 0.07), loc=(X0 + RAIL_X0 + rail_len / 2 - 0.1, 0, PZ), mat=GLOW))
-# Charge coils: steel collars around both rails with a glowing core ring, shrinking to the muzzle
-for k, (x, s) in enumerate(((1.3, 1.0), (2.0, 0.95), (2.7, 0.9), (3.4, 0.85))):
-    w, h = 0.98 * s, 0.82 * s
-    for dx in (-0.075, 0.075):
-        gun.append(frame((0.07, w, h), (0.72, 0.48), (X0 + x + dx, 0, PZ), STEEL, bevel=0.02))
-    gun.append(frame((0.08, w - 0.06, h - 0.06), (0.72, 0.48), (X0 + x, 0, PZ), GLOW, bevel=0))
-    gun.append(frame((0.24, 0.76, 0.52), (0.71, 0.47), (X0 + x, 0, PZ), GUN, bevel=0))  # sleeve under the coil
-# Muzzle: a steel frame tying the rail tips, with a glowing emitter ring
-muzzle = frame((0.3, 0.86, 0.6), (0.36, 0.2), (X0 + 4.15, 0, PZ), STEEL, bevel=0.03)
-gun.append(muzzle)
-gun.append(box((0.04, 0.38, 0.22), loc=(X0 + 4.12, 0, PZ), mat=GLOW))
+    # Light cap along the top edge, stopping short of the chamfer: it catches the key light, so each
+    # rail reads as its own bright line either side of the glowing channel (polished steel mirrors
+    # the dark night sky and stayed black)
+    gun.append(box((rail_len - 0.42, RAIL_W + 0.01, 0.06), loc=(X0 + RAIL_X0 + (rail_len - 0.42) / 2, y, PZ + RAIL_H / 2 + 0.025),
+                   mat=ARMOR_LIGHT, bevel=0.015, segments=1))
+    # Glowing conductor lining the inner face
+    gun.append(box((rail_len - 0.3, 0.025, 0.1), loc=(X0 + RAIL_X0 + rail_len / 2 - 0.1, side * (RAIL_Y - RAIL_W / 2 - 0.01), PZ + 0.04), mat=GLOW))
+GAP = 2 * (RAIL_Y - RAIL_W / 2)  # clear width between the rails
+# Keel tying the rails together underneath, and the channel floor glowing on top of it
+gun.append(box((rail_len - 0.3, GAP + 0.04, 0.08), loc=(X0 + RAIL_X0 + rail_len / 2 - 0.1, 0, PZ - RAIL_H / 2 + 0.04), mat=ARMOR_DARK, bevel=0.015))
+gun.append(box((rail_len - 0.5, GAP - 0.1, 0.03), loc=(X0 + RAIL_X0 + rail_len / 2 - 0.1, 0, PZ - RAIL_H / 2 + 0.095), mat=GLOW))
+# Plasma core riding in the middle of the channel
+gun.append(cylinder(0.05, rail_len - 0.4, loc=(X0 + RAIL_X0 + rail_len / 2 - 0.1, 0, PZ), rot=(0, math.pi / 2, 0), verts=10, mat=GLOW))
+# Charge coils: three slim steel collars around both rails with a glowing ring — thin enough that
+# the channel stays visible between them
+COIL_HOLE = (2 * RAIL_Y + RAIL_W + 0.02, RAIL_H + 0.1)
+for x, s_ in ((1.5, 1.0), (2.35, 0.97), (3.2, 0.94)):
+    w, h = (COIL_HOLE[0] + 0.24) * s_, (COIL_HOLE[1] + 0.24) * s_
+    for dx in (-0.06, 0.06):
+        gun.append(frame((0.05, w, h), COIL_HOLE, (X0 + x + dx, 0, PZ), STEEL, bevel=0.012))
+    gun.append(frame((0.06, w - 0.05, h - 0.05), COIL_HOLE, (X0 + x, 0, PZ), GLOW, bevel=0))
+# Muzzle: a steel frame tying the rail tips, open in the middle so the channel runs out to it
+gun.append(frame((0.28, COIL_HOLE[0] + 0.2, RAIL_H + 0.24), (GAP, RAIL_H - 0.06), (X0 + 4.12, 0, PZ), STEEL, bevel=0.03))
+gun.append(frame((0.03, GAP, RAIL_H - 0.06), (GAP - 0.12, RAIL_H - 0.18), (X0 + 4.1, 0, PZ), GLOW, bevel=0))
 # Feed cables from the breech to the first coil, under the rails
 for side in (-1, 1):
-    gun.append(curve_tube(f'Coil{side}', [(X0 + 0.7, side * 0.38, PZ - 0.28), (X0 + 1.0, side * 0.4, PZ - 0.42),
-                                         (X0 + 1.2, side * 0.36, PZ - 0.36)], 0.045, RUBBER))
+    gun.append(curve_tube(f'Coil{side}', [(X0 + 0.7, side * 0.4, PZ - 0.3), (X0 + 1.05, side * 0.42, PZ - 0.44),
+                                         (X0 + 1.4, side * 0.38, PZ - 0.32)], 0.045, RUBBER))
 # Targeting scope on the left of the breech: tube on two ring mounts, glowing lens, sunshade
 SY, SZ = -0.3, PZ + 0.62
 for x in (-0.1, 0.45):

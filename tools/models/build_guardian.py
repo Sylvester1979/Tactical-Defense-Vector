@@ -34,6 +34,8 @@ PLATE = material('HullPlate', '#8e9aa8', metallic=0.55, roughness=0.36)
 DARK = material('HullDark', '#2b323b', metallic=0.6, roughness=0.5)
 STEEL = material('Steel', '#a7b0bb', metallic=1.0, roughness=0.3)
 GUN = material('Gunmetal', '#1d2228', metallic=0.85, roughness=0.32)
+# The main gun is painted lighter than the dark metalwork, with dark bands, so it reads against the hull
+BARREL = material('Barrel', '#8592a1', metallic=0.45, roughness=0.42)
 TRACK = material('Track', '#16191d', metallic=0.4, roughness=0.75)
 GLOW = material('EnemyGlow', '#05070a', roughness=0.3, emission='#ffb000', emission_strength=7)
 VISOR = material('EnemyVisor', '#05070a', roughness=0.1, emission='#7895c2', emission_strength=4)
@@ -184,6 +186,11 @@ for sy in (-1, 1):
     hull.append(box((0.04, 0.16, 0.07), loc=(-1.765, sy * 0.24, 1.04), mat=GLOW))
     # Tow hooks on the lower front plate
     hull.append(box((0.14, 0.1, 0.18), loc=(1.8, sy * 0.55, 0.62), rot=(0, math.radians(-53), 0), mat=STEEL, bevel=0.02))
+# Stowage bins with straps on the rear fenders
+for sy in (-1, 1):
+    hull.append(box((0.7, 0.42, 0.2), loc=(-1.05, sy * 1.2, 1.04), mat=PLATE, bevel=0.03))
+    for dx in (-0.2, 0.2):
+        hull.append(box((0.04, 0.44, 0.21), loc=(-1.05 + dx, sy * 1.2, 1.04), mat=DARK))
 # Driver's hatch and vision block on the front deck
 hull.append(cylinder(0.2, 0.06, loc=(0.82, 0.48, 1.33), verts=20, mat=PLATE, bevel=0.015))
 hull.append(box((0.1, 0.3, 0.08), loc=(1.02, 0.48, 1.29), rot=(0, glacis, 0), mat=VISOR))
@@ -199,15 +206,23 @@ body = slab(outline, TZ + 0.07, 0.52, mat=ARMOR, bevel=0.05, segments=3, angle=3
 # Embrasure for the gun mantlet
 cut(body, box((0.5, 0.42, 0.34), loc=(TX + 0.95, 0, TZ + 0.33)))
 tur.append(body)
-tur.append(box((0.32, 0.46, 0.34), loc=(TX + 0.83, 0, TZ + 0.33), mat=DARK, bevel=0.04))   # mantlet
+# Mantlet: a broad armoured block framing the gun, with a steel collar where the barrel leaves it
+tur.append(box((0.36, 0.6, 0.42), loc=(TX + 0.84, 0, TZ + 0.33), mat=DARK, bevel=0.05, segments=2))
 GUN_Z = TZ + 0.33
-tur.append(cylinder(0.075, 1.7, loc=(TX + 1.75, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=16, mat=GUN))
-tur.append(cylinder(0.12, 0.34, loc=(TX + 1.4, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=20, mat=GUN, bevel=0.03))  # fume extractor
-brake = cylinder(0.11, 0.26, loc=(TX + 2.55, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=16, mat=GUN, bevel=0.02)
-for dx in (-0.06, 0.06):
-    cut(brake, box((0.06, 0.4, 0.12), loc=(TX + 2.55 + dx, 0, GUN_Z)))
-cut(brake, cylinder(0.05, 0.4, loc=(TX + 2.65, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=12))
+tur.append(cylinder(0.19, 0.12, loc=(TX + 1.06, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=24, mat=STEEL, bevel=0.02))
+# Barrel: thick and slightly tapered, ~1.7 long
+tur.append(cylinder(0.135, 1.62, radius2=0.115, loc=(TX + 1.92, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=20, mat=BARREL))
+# Bore evacuator: the bulge two-fifths along, chamfered, with steel bands at both ends
+tur.append(cylinder(0.185, 0.4, loc=(TX + 1.62, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=24, mat=BARREL, bevel=0.06, segments=2))
+for dx in (-0.21, 0.21):
+    tur.append(cylinder(0.17, 0.05, loc=(TX + 1.62 + dx, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=24, mat=DARK))
+# Double-baffle muzzle brake: a squared block with two dark side ports
+brake = box((0.34, 0.34, 0.27), loc=(TX + 2.82, 0, GUN_Z), mat=BARREL, bevel=0.035, segments=2)
+for dx in (-0.075, 0.075):
+    cut(brake, box((0.07, 0.6, 0.17), loc=(TX + 2.82 + dx, 0, GUN_Z)))
+cut(brake, cylinder(0.075, 0.6, loc=(TX + 2.82, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=16))
 tur.append(brake)
+tur.append(cylinder(0.125, 0.06, loc=(TX + 2.66, 0, GUN_Z), rot=(0, math.pi / 2, 0), verts=20, mat=DARK))  # brake clamp
 # Cheek armour blocks either side of the mantlet
 for sy in (-1, 1):
     tur.append(box((0.55, 0.22, 0.3), loc=(TX + 0.55, sy * 0.48, TZ + 0.42), rot=(0, 0, sy * math.radians(-28)), mat=PLATE, bevel=0.03))
@@ -226,8 +241,11 @@ for a in (-40, 0, 40):
 for sy in (-1, 1):
     tur.append(box((0.3, 0.12, 0.12), loc=(TX + 0.15, sy * 0.78, TZ + 0.4), rot=(0, 0, sy * math.radians(-12)), mat=DARK, bevel=0.02))
     for k in range(3):
-        tur.append(cylinder(0.05, 0.2, loc=(TX + 0.05 + k * 0.1, sy * 0.86, TZ + 0.5),
-                            rot=(sy * math.radians(-40), math.radians(25), 0), verts=10, mat=GUN))
+        rot = (sy * math.radians(-40), math.radians(25), 0)
+        tube = cylinder(0.058, 0.22, loc=(TX + 0.03 + k * 0.12, sy * 0.86, TZ + 0.5), rot=rot, verts=12, mat=PLATE, bevel=0.012)
+        # Dark bore at the open end, so each tube reads as a launcher rather than a lump
+        cut(tube, cylinder(0.038, 0.12, loc=(TX + 0.03 + k * 0.12, sy * 0.86, TZ + 0.5), rot=rot, verts=10))
+        tur.append(tube)
 # Rear stowage basket and antenna with an amber beacon
 tur.append(box((0.32, 1.2, 0.3), loc=(TX - 1.15, 0, TZ + 0.3), mat=DARK, bevel=0.03))
 for k in range(4):
