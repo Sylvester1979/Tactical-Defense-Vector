@@ -162,7 +162,7 @@ export function useGame() {
 
     const check = checkPlacement({ x, y }, towers);
     if (check !== 'OK') {
-      createFloatingText(x, y, check === 'PATH' ? "INVALID TERRAIN" : "SPACE OCCUPIED", "#ff4d4d");
+      createFloatingText(x, y, check === 'PATH' ? "Can't build on the road" : "Too close to another tower", "#ff4d4d");
       playSound('error');
       return;
     }
@@ -196,7 +196,7 @@ export function useGame() {
     if (gameState.money >= upgradeCost) {
       setTowers(prev => prev.map(t => t.id === id ? { ...t, level: t.level + 1, invested: t.invested + upgradeCost } : t));
       setGameState(prev => ({ ...prev, money: prev.money - upgradeCost }));
-      createFloatingText(tower.x, tower.y - 20, "UPGRADED!", "#00f2ff");
+      createFloatingText(tower.x, tower.y - 20, "Upgraded", "#00f2ff");
       playSound('upgrade', panAt(tower.x, tower.y));
     } else {
       playSound('error');
@@ -234,7 +234,7 @@ export function useGame() {
 
   const startRelocation = useCallback((id: string) => {
     if (gameState.money < RELOCATION_FEE) {
-      createFloatingText(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, "NOT ENOUGH ENERGY", "#ff4d4d");
+      createFloatingText(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, "Not enough credits", "#ff4d4d");
       return;
     }
     setGameState(prev => ({ ...prev, relocatingTowerId: id }));
@@ -250,7 +250,7 @@ export function useGame() {
 
     const check = checkPlacement({ x, y }, towers, id);
     if (check !== 'OK') {
-      createFloatingText(x, y, check === 'PATH' ? "INVALID TERRAIN" : "SPACE OCCUPIED", "#ff4d4d");
+      createFloatingText(x, y, check === 'PATH' ? "Can't build on the road" : "Too close to another tower", "#ff4d4d");
       playSound('error');
       return;
     }
@@ -264,7 +264,7 @@ export function useGame() {
     }));
     createExplosion(x, y, "#00f2ff", 15);
     playSound('place', panAt(x, y));
-    createFloatingText(x, y - 20, "REDEPLOYED", "#00f2ff");
+    createFloatingText(x, y - 20, "Moved", "#00f2ff");
   }, [towers, createFloatingText, createExplosion]);
 
   const update = useCallback((time: number) => {
@@ -322,7 +322,7 @@ export function useGame() {
             setWaveActive(false);
             setGameState(updatedState);
             gameStateRef.current = updatedState;
-            createFloatingText(PATH[PATH.length - 1].x, PATH[PATH.length - 1].y, `Wave Bonus: +$${waveBonus}`, "#10b981");
+            createFloatingText(PATH[PATH.length - 1].x, PATH[PATH.length - 1].y, `Wave bonus +$${waveBonus}`, "#10b981");
             playSound('waveClear');
           }
 

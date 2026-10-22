@@ -77,13 +77,13 @@ const SectionHeader: React.FC<{ icon: React.ComponentType<IconProps>; label: str
     <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-white/[0.06] bg-white/[0.015]">
       <span className="h-3.5 w-[3px] rounded-full" style={{ backgroundColor: accent, boxShadow: `0 0 8px ${accent}` }} />
       <Icon className="w-3.5 h-3.5" style={{ color: accent }} />
-      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/75 font-mono">{label}</span>
+      <span className="font-display font-semibold text-[12px] uppercase tracking-[0.16em] text-white/80">{label}</span>
       {right && <div className="ml-auto flex items-center">{right}</div>}
     </div>
   );
 
 const Chip: React.FC<{ cls: string; children: React.ReactNode }> = ({ cls, children }) => (
-  <span className={`text-[8px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${cls}`}>{children}</span>
+  <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${cls}`}>{children}</span>
 );
 
 export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, placingType, setPlacingType, waveRemaining }) => {
@@ -120,7 +120,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
 
       {/* ── BUILD ── */}
       <section className={panelCls}>
-        <SectionHeader icon={Crosshair} label="Build" right={<span className="text-[9px] font-mono text-white/30 tracking-wider">KEYS 1–3</span>} />
+        <SectionHeader icon={Crosshair} label="Build" right={<span className="text-[11px] font-mono text-white/50 tracking-wider">KEYS 1–3</span>} />
         <div className="p-2 space-y-1.5">
           {BASE_TOWERS.map((type, idx) => {
             const stats = TOWER_STATS[type];
@@ -147,7 +147,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
                     style={{ background: `radial-gradient(circle at 35% 30%, ${stats.color}33, ${stats.color}0a 70%)`, borderColor: `${stats.color}3d` }}
                   >
                     <Icon className="w-5 h-5" style={{ color: stats.color, filter: `drop-shadow(0 0 4px ${stats.color}99)` }} />
-                    <kbd className="absolute -bottom-1.5 -right-1.5 min-w-[15px] h-[15px] px-1 rounded bg-[#0d1117] border border-white/15 text-[8px] font-mono font-bold text-white/60 flex items-center justify-center leading-none">
+                    <kbd className="absolute -bottom-1.5 -right-1.5 min-w-[15px] h-[15px] px-1 rounded bg-[#0d1117] border border-white/15 text-[10px] font-mono font-bold text-white/60 flex items-center justify-center leading-none">
                       {idx + 1}
                     </kbd>
                     {locked && (
@@ -158,7 +158,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[13px] font-bold leading-tight truncate text-white">{stats.name}</span>
+                      <span className="font-display font-semibold text-[14px] tracking-[0.02em] leading-tight truncate text-white">{stats.name}</span>
                       <span
                         className="text-[11px] font-bold font-mono shrink-0 px-1.5 py-0.5 rounded tabular-nums"
                         style={{ color: affordable ? stats.color : '#ff4d4d', backgroundColor: affordable ? `${stats.color}1f` : 'rgba(255,77,77,0.12)' }}
@@ -168,7 +168,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
                     </div>
                     <div className="flex items-center gap-1.5 mt-1">
                       <Chip cls={DMG_STYLE[stats.damageType].cls}>{DMG_STYLE[stats.damageType].label}</Chip>
-                      <span className="text-[9px] font-mono text-white/45 truncate">{ROLE[type]}</span>
+                      <span className="text-[11px] font-mono text-white/45 truncate">{ROLE[type]}</span>
                     </div>
                   </div>
                 </div>
@@ -182,15 +182,15 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
                         ['RATE', `${stats.fireRate}/s`],
                       ].map(([k, v]) => (
                         <div key={k} className="rounded bg-black/30 py-1">
-                          <div className="text-[7px] font-mono text-white/35 tracking-widest">{k}</div>
+                          <div className="text-[10px] font-mono text-white/50 tracking-widest">{k}</div>
                           <div className="text-[11px] font-mono font-bold text-white/85 tabular-nums">{v}</div>
                         </div>
                       ))}
                     </div>
                     <div className="space-y-1">
-                      <div className="text-[7px] font-mono uppercase tracking-[0.2em] text-white/35">Level 3 specializes into</div>
+                      <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/50">Level 3 specializes into</div>
                       {SPECIALIZATIONS[type].map(spec => (
-                        <div key={spec} className="flex items-center gap-1.5 text-[9px] font-mono">
+                        <div key={spec} className="flex items-center gap-1.5 text-[11px] font-mono">
                           <ChevronRight className="w-3 h-3 shrink-0" style={{ color: TOWER_STATS[spec].color }} />
                           <span className="font-bold" style={{ color: TOWER_STATS[spec].color }}>{TOWER_STATS[spec].name}</span>
                           <span className="text-white/45 truncate">{SPEC_TRAIT[spec]}</span>
@@ -215,7 +215,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
             right={
               <span className="text-[10px] font-mono font-bold tabular-nums" style={{ color: live ? '#ff4d4d' : '#ffb800' }}>
                 {live ? `${remaining} left` : `×${cfg.count}`}
-                <span className="text-white/35 font-normal"> · </span>
+                <span className="text-white/50 font-normal"> · </span>
                 <span className="text-accent-amber" title="Credits for clearing the wave">+${getWaveBonus(threatWave)}</span>
               </span>
             }
@@ -228,8 +228,8 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
           {cfg.modifier !== WaveModifier.NONE && (
             <div className="px-3.5 py-1.5 flex items-center gap-2" style={{ backgroundColor: `${modHex}10`, borderBottom: `1px solid ${modHex}30` }}>
               <Zap className="w-3 h-3 shrink-0" style={{ color: modHex }} />
-              <span className="text-[9px] font-black font-mono uppercase" style={{ color: modHex }}>{MODIFIER_STYLE[cfg.modifier].label}</span>
-              <span className="text-[8px] font-mono opacity-70 ml-auto" style={{ color: modHex }}>{MODIFIER_STYLE[cfg.modifier].desc}</span>
+              <span className="text-[11px] font-black font-mono uppercase" style={{ color: modHex }}>{MODIFIER_STYLE[cfg.modifier].label}</span>
+              <span className="text-[10px] font-mono opacity-70 ml-auto" style={{ color: modHex }}>{MODIFIER_STYLE[cfg.modifier].desc}</span>
             </div>
           )}
           <div className="p-2 space-y-1">
@@ -245,8 +245,8 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: e.color, boxShadow: `0 0 6px ${e.color}` }} />
                     <span className="text-[10px] font-bold text-white/85 truncate">{e.name}</span>
-                    <span className="text-[9px] font-mono font-bold text-accent-amber tabular-nums">×{counts[kind]}</span>
-                    <span className="ml-auto text-[9px] font-mono text-white/45 tabular-nums whitespace-nowrap">{hp} HP · {Math.round(e.speed * cfg.speedMult)} SPD</span>
+                    <span className="text-[11px] font-mono font-bold text-accent-amber tabular-nums">×{counts[kind]}</span>
+                    <span className="ml-auto text-[11px] font-mono text-white/45 tabular-nums whitespace-nowrap">{hp} HP · {Math.round(e.speed * cfg.speedMult)} SPD</span>
                   </div>
                   <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                     {res.map(([dt, mult]) => (
@@ -256,7 +256,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
                     ))}
                     {leak > 1 && <Chip cls="bg-amber-500/10 border-amber-500/25 text-amber-300">Leak −{leak}</Chip>}
                     {towers.length > 0 && (
-                      <span className="ml-auto text-[8px] font-mono font-bold tabular-nums" style={{ color: fitCol }} title="Share of your grid's damage that lands on this enemy after resistances">
+                      <span className="ml-auto text-[10px] font-mono font-bold tabular-nums" style={{ color: fitCol }} title="Share of your grid's damage that lands on this enemy after resistances">
                         GRID {Math.round(fit * 100)}%
                       </span>
                     )}
@@ -268,7 +268,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
           {warn && (
             <div className="mx-2 mb-2 rounded-lg border border-accent-red/30 bg-accent-red/[0.07] px-2.5 py-1.5 flex gap-2 items-start">
               <AlertTriangle className="w-3.5 h-3.5 text-accent-red shrink-0 mt-0.5" />
-              <div className="text-[9px] font-mono leading-snug text-white/70">
+              <div className="text-[11px] font-mono leading-snug text-white/70">
                 Your grid is weak against <span className="text-white font-bold">{ENEMY_TYPES[warn].name}</span>. Counter with{' '}
                 {counters(warn).map((d, i) => (
                   <React.Fragment key={d}>
@@ -285,18 +285,18 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
 
       {/* ── GRID ── */}
       <section className={panelCls}>
-        <SectionHeader icon={Layers} label="Defense Grid" right={<span className="text-[9px] font-mono text-white/30 tracking-wider">{towers.length} UNITS</span>} />
+        <SectionHeader icon={Layers} label="Defense Grid" right={<span className="text-[11px] font-mono text-white/50 tracking-wider">{towers.length} UNITS</span>} />
         {towers.length === 0 ? (
-          <p className="px-3.5 py-3 text-[9px] font-mono text-white/35 leading-relaxed">No towers yet. Pick one above and click the map — anywhere off the road.</p>
+          <p className="px-3.5 py-3 text-[11px] font-mono text-white/50 leading-relaxed">No towers yet. Pick one above and click the map — anywhere off the road.</p>
         ) : (
           <div className="p-3 space-y-2.5">
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg bg-black/30 border border-white/[0.05] px-2.5 py-1.5">
-                <div className="text-[7px] uppercase tracking-widest text-white/35 font-mono">Damage / s</div>
+                <div className="text-[10px] uppercase tracking-widest text-white/50 font-mono">Damage / s</div>
                 <div className="text-[15px] font-black font-mono tabular-nums text-accent-cyan leading-tight">{Math.round(grid.total).toLocaleString()}</div>
               </div>
               <div className="rounded-lg bg-black/30 border border-white/[0.05] px-2.5 py-1.5">
-                <div className="text-[7px] uppercase tracking-widest text-white/35 font-mono">Resale value</div>
+                <div className="text-[10px] uppercase tracking-widest text-white/50 font-mono">Resale value</div>
                 <div className="text-[15px] font-black font-mono tabular-nums text-white/80 leading-tight">${grid.value.toLocaleString()}</div>
               </div>
             </div>
@@ -308,7 +308,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
               </div>
               <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-1.5">
                 {DAMAGE_TYPES.filter(d => grid.byType[d] > 0).map(d => (
-                  <span key={d} className="flex items-center gap-1 text-[8px] font-mono text-white/50">
+                  <span key={d} className="flex items-center gap-1 text-[10px] font-mono text-white/50">
                     <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: DMG_STYLE[d].hex }} />
                     {DMG_STYLE[d].label} {Math.round((grid.byType[d] / grid.total) * 100)}%
                   </span>
@@ -323,7 +323,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
                   .map(type => ({ type, n: family.filter(t => t.type === type).length }))
                   .filter(p => p.n > 0);
                 return (
-                  <div key={base} className="flex items-center gap-2 text-[9px] font-mono">
+                  <div key={base} className="flex items-center gap-2 text-[11px] font-mono">
                     <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: TOWER_STATS[base].color }} />
                     <span className="text-white/70 w-12">{FAMILY[base]}</span>
                     <span className="text-white/40 truncate">

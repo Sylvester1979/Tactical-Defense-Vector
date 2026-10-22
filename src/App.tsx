@@ -93,9 +93,15 @@ export default function App() {
     const key = e.key.toLowerCase();
 
     if (key === 'escape') {
-      setPlacingType(null);
-      cancelRelocation();
-      setGameState(s => ({ ...s, selectedTowerId: null }));
+      // Esc first backs out of whatever is in hand; with nothing to cancel it pauses a running wave
+      // (while paused, the pause menu takes Esc itself and resumes)
+      if (placingType || gameState.relocatingTowerId || gameState.selectedTowerId) {
+        setPlacingType(null);
+        cancelRelocation();
+        setGameState(s => ({ ...s, selectedTowerId: null }));
+      } else if (!gameState.isWaveReady && !gameState.isGameOver) {
+        setGameState(s => ({ ...s, isPaused: !s.isPaused }));
+      }
       return;
     }
     if (e.repeat) return;
@@ -202,6 +208,9 @@ export default function App() {
     setGameState(s => ({ ...s, selectedTowerId: null }));
   };
 
+  // The shake decays only while the game runs, so a stopped game (paused, lost) mustn't shake
+  const shakeTime = gameState.isPaused || gameState.isGameOver ? 0 : gameState.shakeTime;
+
   const canvasProps = {
     towers,
     enemies,
@@ -211,14 +220,14 @@ export default function App() {
     selectedTowerId: gameState.selectedTowerId,
     relocatingTowerId: gameState.relocatingTowerId,
     placingType,
-    shakeTime: gameState.shakeTime,
+    shakeTime,
     coreIntegrity: gameState.lives / INITIAL_LIVES,
     onCanvasClick: handleCanvasClick,
   };
 
   // Damage shake: the 2D view shakes the whole page; the 3D view shakes only its camera
   return (
-    <div className={`min-h-screen bg-dark-bg flex flex-col overflow-hidden font-sans relative ${gameState.shakeTime > 0 && !use3D ? 'jitter-effect' : ''}`}>
+    <div className={`min-h-screen bg-dark-bg flex flex-col overflow-hidden font-sans relative ${shakeTime > 0 && !use3D ? 'jitter-effect' : ''}`}>
       
       <UIOverlay 
         gameState={gameState}
