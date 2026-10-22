@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 import { Point } from '../types';
 import { fromIso, toIso } from '../lib/iso';
 import { checkPlacement } from '../lib/placement';
+import { View, screenToFrame } from '../lib/view';
 import type { GameCanvasProps } from './GameCanvas';
 import { createGameScene, SceneInputs } from '../render3d/gameScene';
 
-// WebGL battlefield: a drop-in for GameCanvas (same props, same 1000×800 frame and click
-// coordinates). The scene runs its own render loop and reads the latest props from a ref, so
-// React re-rendering every game tick costs next to nothing here.
+// WebGL battlefield. It fills its parent (the whole window) and frames the 1000×800 isometric
+// frame where `view` puts it; clicks are mapped back into that frame, so App's click handling and
+// the game's coordinates are the same as with GameCanvas. The scene runs its own render loop and
+// reads the latest props from a ref, so React re-rendering every game tick costs next to nothing.
 
 const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
   const l2 = (x1 - x2) ** 2 + (y1 - y2) ** 2;
@@ -18,11 +19,12 @@ const distToSegment = (px: number, py: number, x1: number, y1: number, x2: numbe
 };
 
 interface GameView3DProps extends GameCanvasProps {
+  view: View;
   onReady?: () => void; // models loaded and warmed up
 }
 
 export const GameView3D: React.FC<GameView3DProps> = ({ onReady, ...props }) => {
-  const { towers, placingType, relocatingTowerId, onCanvasClick } = props;
+  const { towers, placingType, relocatingTowerId, onCanvasClick, view } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const hudRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
@@ -44,13 +46,11 @@ export const GameView3D: React.FC<GameView3DProps> = ({ onReady, ...props }) => 
     return () => scene.dispose();
   }, []);
 
-  // Pointer position in the fixed 1000×800 frame, whatever the arena's CSS scale
+  // Pointer position in the 1000×800 frame
   const toFrame = (e: React.MouseEvent) => {
     const rect = hostRef.current!.getBoundingClientRect();
-    return {
-      sx: (e.clientX - rect.left) * (CANVAS_WIDTH / rect.width),
-      sy: (e.clientY - rect.top) * (CANVAS_HEIGHT / rect.height),
-    };
+    const f = screenToFrame(view, e.clientX - rect.left, e.clientY - rect.top);
+    return { sx: f.x, sy: f.y };
   };
 
   const handleClick = (e: React.MouseEvent) => {
@@ -82,10 +82,9 @@ export const GameView3D: React.FC<GameView3DProps> = ({ onReady, ...props }) => 
       onClick={handleClick}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => { setHoveredTowerId(null); setMouse(null); }}
-      style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
-      className={`relative overflow-hidden bg-dark-bg rounded-lg outline outline-1 outline-slate-800 shadow-2xl ${hoveredTowerId ? 'cursor-pointer' : ghostCheck !== 'OK' ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
+      className={`absolute inset-0 overflow-hidden bg-[#05080e] ${hoveredTowerId ? 'cursor-pointer' : ghostCheck !== 'OK' ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
     >
-      <canvas ref={hudRef} className="absolute inset-0 pointer-events-none" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, zIndex: 1 }} />
+      <canvas ref={hudRef} className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }} />
       {!ready && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none" style={{ zIndex: 2 }}>
           <span className="font-mono text-xs tracking-[0.3em] text-accent-cyan animate-pulse">LOADING DEFENSE GRID…</span>

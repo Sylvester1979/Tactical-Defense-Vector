@@ -3,8 +3,9 @@ import { GameCanvas } from './components/GameCanvas';
 import { UIOverlay } from './components/UIOverlay';
 import { useGame } from './hooks/useGame';
 import { TowerType, TargetingMode } from './types';
-import { TOWER_STATS, GAME_SPEEDS, getSellValue, INITIAL_LIVES, CANVAS_WIDTH, CANVAS_HEIGHT } from './constants';
+import { TOWER_STATS, GAME_SPEEDS, getSellValue, INITIAL_LIVES } from './constants';
 import { toIso } from './lib/iso';
+import { frameStyle } from './lib/view';
 import { unlockAudio, isMuted, setMuted } from './lib/audio';
 
 // The battlefield renders in WebGL (3D models, lighting, post-processing). ?renderer=2d, or a
@@ -254,14 +255,16 @@ export default function App() {
         onSetTargetingMode={setTowerTargetingMode}
         placingType={placingType}
         setPlacingType={setPlacingType}
-        renderCanvas={use3D ? (
-          <React.Suspense fallback={<div style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }} className="bg-dark-bg" />}>
-            <GameView3D {...canvasProps} onReady={onAssetsReady} />
+        renderCanvas={view => use3D ? (
+          <React.Suspense fallback={<div className="absolute inset-0 bg-[#05080e]" />}>
+            <GameView3D {...canvasProps} view={view} onReady={onAssetsReady} />
           </React.Suspense>
         ) : (
-          <GameCanvas {...canvasProps} />
-        )
-        }
+          // The 2D renderer draws the 1000×800 frame itself; the view only places and scales it
+          <div style={frameStyle(view)}>
+            <GameCanvas {...canvasProps} />
+          </div>
+        )}
       />
     </div>
   );

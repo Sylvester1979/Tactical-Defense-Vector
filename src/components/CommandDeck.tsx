@@ -115,7 +115,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({ gameState, towers, pla
   const modHex = MODIFIER_HEX[cfg.modifier];
 
   return (
-    <aside className="w-[336px] shrink-0 bg-gradient-to-b from-[#15181e] via-[#111419] to-[#0d0f13] border-l border-white/[0.06] flex flex-col gap-3 overflow-y-auto p-3.5 relative">
+    <aside className="w-[336px] shrink-0 bg-[#0c1016]/75 backdrop-blur-xl border-l border-white/[0.06] flex flex-col gap-3 overflow-y-auto p-3.5 relative">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-accent-cyan/[0.05] to-transparent" />
 
       {/* ── BUILD ── */}

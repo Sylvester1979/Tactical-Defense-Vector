@@ -24,6 +24,8 @@ interface TowerModuleProps {
   onStartRelocation: (id: string) => void;
   onSetTargetingMode: (id: string, mode: TargetingMode) => void;
   onClose: () => void;
+  // The part of the frame that is on screen and clear of the HUD; the panel stays inside it
+  bounds?: { x0: number; y0: number; x1: number; y1: number };
 }
 
 const TARGETING_LABELS: Record<TargetingMode, string> = {
@@ -42,7 +44,8 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   onSell,
   onStartRelocation,
   onSetTargetingMode,
-  onClose
+  onClose,
+  bounds = { x0: 0, y0: 0, x1: CANVAS_WIDTH, y1: CANVAS_HEIGHT },
 }) => {
   const stats = TOWER_STATS[tower.type];
   const towerH = 40 + tower.level * 2;
@@ -66,17 +69,18 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
     return () => ro.disconnect();
   }, []);
   // Above or below the tower when the panel fits there, otherwise beside it, never over it
-  const clampX = (x: number) => Math.max(MARGIN, Math.min(CANVAS_WIDTH - MODULE_WIDTH - MARGIN, x));
-  const clampY = (y: number) => Math.max(MARGIN, Math.min(CANVAS_HEIGHT - MARGIN - panelH, y));
+  const { x0, y0, x1, y1 } = bounds;
+  const clampX = (x: number) => Math.max(x0 + MARGIN, Math.min(x1 - MODULE_WIDTH - MARGIN, x));
+  const clampY = (y: number) => Math.max(y0 + MARGIN, Math.min(y1 - MARGIN - panelH, y));
   const SIDE_GAP = 36;
   const placement: 'above' | 'below' | 'right' | 'left' =
-    screenPos.y - CONNECTOR - panelH >= MARGIN ? 'above'
-    : screenPos.y + CONNECTOR + panelH <= CANVAS_HEIGHT - MARGIN ? 'below'
-    : screenPos.x + SIDE_GAP + MODULE_WIDTH <= CANVAS_WIDTH - MARGIN ? 'right'
+    screenPos.y - CONNECTOR - panelH >= y0 + MARGIN ? 'above'
+    : screenPos.y + CONNECTOR + panelH <= y1 - MARGIN ? 'below'
+    : screenPos.x + SIDE_GAP + MODULE_WIDTH <= x1 - MARGIN ? 'right'
     : 'left';
   const showBelow = placement === 'below';
   const left = placement === 'right' ? screenPos.x + SIDE_GAP
-    : placement === 'left' ? Math.max(MARGIN, screenPos.x - SIDE_GAP - MODULE_WIDTH)
+    : placement === 'left' ? Math.max(x0 + MARGIN, screenPos.x - SIDE_GAP - MODULE_WIDTH)
     : clampX(screenPos.x - MODULE_WIDTH / 2);
   const top = placement === 'above' ? screenPos.y - CONNECTOR - panelH
     : placement === 'below' ? screenPos.y + CONNECTOR
