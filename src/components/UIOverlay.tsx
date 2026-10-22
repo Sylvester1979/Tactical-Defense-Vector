@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
 import { CommandDeck } from './CommandDeck';
+import { RunSummary } from './RunSummary';
+import type { RunStats } from '../game/stats';
 import { MODIFIER_HEX, MODIFIER_STYLE } from './uiStyles';
 import { Button } from './ui/Button';
 import { Kbd } from './ui/Kbd';
@@ -52,6 +54,8 @@ interface UIOverlayProps {
   assetsReady: boolean;
   // Enemies of the running wave still to beat, by kind; null between waves
   waveRemaining: Record<string, number> | null;
+  // The run's statistics, for the summary when it ends
+  stats: RunStats;
 }
 
 const CONTROLS: [string, string][] = [
@@ -126,6 +130,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   screenGrid,
   assetsReady,
   waveRemaining,
+  stats,
 }) => {
   const selectedTower = towers.find(t => t.id === gameState.selectedTowerId);
 
@@ -594,34 +599,13 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             animate={{ opacity: 1 }}
             className="fixed inset-0 z-[1000] flex items-center justify-center bg-[#05070b]/80 backdrop-blur-md"
           >
-            <motion.div
-              initial={{ scale: 0.94, y: 16 }}
-              animate={{ scale: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-              className="relative w-[460px] rounded-2xl border border-accent-red/30 bg-[#11151b]/95 px-10 py-9 text-center shadow-[0_30px_90px_-20px_rgba(255,77,77,0.35)] overflow-hidden"
-            >
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent-red/70 to-transparent" />
-              <div className="font-display font-semibold text-[12px] uppercase tracking-[0.3em] text-accent-red">Game over</div>
-              <h2 className="mt-2 font-display font-bold text-[40px] leading-none tracking-[0.02em] text-white">Defense breached</h2>
-              <div className="mt-7 grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-black/30 border border-white/[0.06] py-3">
-                  <div className="text-[11px] uppercase tracking-[0.14em] text-white/50 font-display font-semibold">Waves survived</div>
-                  <div className="mt-1 font-mono font-bold text-[26px] text-white tabular-nums">{Math.max(0, gameState.waveNumber - 1)}</div>
-                </div>
-                <div className="rounded-xl bg-black/30 border border-white/[0.06] py-3">
-                  <div className="text-[11px] uppercase tracking-[0.14em] text-white/50 font-display font-semibold">Best</div>
-                  <div className="mt-1 font-mono font-bold text-[26px] text-white tabular-nums">{bestWaves}</div>
-                </div>
-              </div>
-              {newRecord && (
-                <div className="mt-4 inline-flex px-3.5 py-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 text-[12px] font-display font-semibold uppercase tracking-[0.2em]">
-                  ★ New record
-                </div>
-              )}
-              <Button variant="primary" size="lg" onClick={onRestart} className="mt-7 w-full">
-                <RotateCcw className="w-4 h-4" />Play again
-              </Button>
-            </motion.div>
+            <RunSummary
+              stats={stats}
+              wavesHeld={Math.max(0, gameState.waveNumber - 1)}
+              bestWaves={bestWaves}
+              newRecord={newRecord}
+              onRestart={onRestart}
+            />
           </motion.div>
         )}
       </AnimatePresence>

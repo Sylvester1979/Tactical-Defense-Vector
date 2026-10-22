@@ -52,6 +52,7 @@ export default function App() {
     newRecord,
     restart,
     waveRemaining,
+    stats,
   } = useGame();
 
   const [placingType, setPlacingType] = useState<TowerType | null>(null);
@@ -243,6 +244,7 @@ export default function App() {
         screenGrid={!use3D}
         assetsReady={assetsReady}
         waveRemaining={waveRemaining}
+        stats={stats}
         onUpgradeTower={upgradeTower}
         onSpecializeTower={specializeTower}
         onSellTower={sellTower}

@@ -29,6 +29,7 @@ import { loadRun, saveRun, clearRun, loadBest, saveBest, hydrateTowers } from '.
 import { checkPlacement } from '../lib/placement';
 import { playSound } from '../lib/audio';
 import { step, startWaveRun, idleWave, SimEvents, SimState, WaveRun } from '../game/sim';
+import { RunStats, newStats, restoreStats } from '../game/stats';
 
 // Stereo position of a world point: left/right across the isometric screen
 const panAt = (x: number, y: number) => Math.max(-1, Math.min(1, ((x - y) * 0.6) / 500)) * 0.7;
@@ -57,6 +58,8 @@ export function useGame() {
   });
 
   const [towers, setTowers] = useState<TowerInstance[]>(() => initialRun ? hydrateTowers(initialRun.towers) : []);
+  // The run's statistics, mutated in place by the simulation and the actions below
+  const statsRef = useRef<RunStats>(initialRun ? restoreStats(initialRun.stats) : newStats());
 
   // Best run = most waves cleared; newRecord flags that this run beat the best it started against
   const [bestWaves, setBestWaves] = useState(() => loadBest()?.waves ?? 0);
@@ -182,6 +185,8 @@ export function useGame() {
     };
 
     setTowers(prev => [...prev, newTower]);
+    statsRef.current.towersBuilt++;
+    statsRef.current.creditsSpent += stats.cost;
     playSound('place', panAt(x, y));
     setGameState(prev => ({ ...prev, money: prev.money - stats.cost }));
   }, [gameState.money, towers, createFloatingText]);
@@ -196,6 +201,7 @@ export function useGame() {
     if (gameState.money >= upgradeCost) {
       setTowers(prev => prev.map(t => t.id === id ? { ...t, level: t.level + 1, invested: t.invested + upgradeCost } : t));
       setGameState(prev => ({ ...prev, money: prev.money - upgradeCost }));
+      statsRef.current.creditsSpent += upgradeCost;
       createFloatingText(tower.x, tower.y - 20, "Upgraded", "#00f2ff");
       playSound('upgrade', panAt(tower.x, tower.y));
     } else {
@@ -214,6 +220,7 @@ export function useGame() {
       // The tower keeps its level: specializing is a step up, not a restart
       setTowers(prev => prev.map(t => t.id === id ? { ...t, type: newType, invested: t.invested + cost } : t));
       setGameState(prev => ({ ...prev, money: prev.money - cost }));
+      statsRef.current.creditsSpent += cost;
       createExplosion(tower.x, tower.y, stats.color, 20);
       playSound('specialize', panAt(tower.x, tower.y));
       createFloatingText(tower.x, tower.y - 20, stats.name.toUpperCase(), stats.color);
@@ -256,6 +263,7 @@ export function useGame() {
     }
 
     setTowers(prev => prev.map(t => t.id === id ? { ...t, x, y } : t));
+    statsRef.current.creditsSpent += RELOCATION_FEE;
     setGameState(prev => ({ 
       ...prev, 
       money: prev.money - RELOCATION_FEE,
@@ -273,6 +281,7 @@ export function useGame() {
       // Fast-forward runs several fixed steps per frame instead of a bigger dt,
       // so fast projectiles can't tunnel past their collision radius
       const steps = gameStateRef.current.gameSpeed || 1;
+      if (!gameStateRef.current.isPaused && !gameStateRef.current.isGameOver) statsRef.current.runTime += dt;
 
       for (let i = 0; i < steps; i++) {
         const currentGameState = gameStateRef.current;
@@ -284,6 +293,7 @@ export function useGame() {
             towers: towersRef.current,
             projectiles: projectilesRef.current,
             wave: waveRef.current,
+            stats: statsRef.current,
           };
           const { moneyEarned, livesLost, waveCleared } = step(sim, dt, simEvents);
           let newShake = currentGameState.shakeTime;
@@ -313,6 +323,7 @@ export function useGame() {
 
           if (waveCleared) {
             const waveBonus = getWaveBonus(currentGameState.waveNumber);
+            statsRef.current.creditsEarned += waveBonus;
             const updatedState = {
               ...gameStateRef.current,
               money: gameStateRef.current.money + waveBonus,
@@ -371,6 +382,7 @@ export function useGame() {
       money, lives, waveNumber, gameSpeed,
       towers: towersRef.current.map(({ id, type, baseType, x, y, level, targetingMode, invested }) =>
         ({ id, type, baseType, x, y, level, targetingMode, invested })),
+      stats: statsRef.current,
     });
   }, [gameState.isWaveReady, gameState.isGameOver, gameState.waveNumber, gameState.money, gameState.lives, gameState.gameSpeed, towerSignature]);
 
@@ -415,6 +427,7 @@ export function useGame() {
     setFloatingTexts([]);
     setWaveActive(false);
     waveRef.current = idleWave();
+    statsRef.current = newStats();
   };
 
   // What's left of the running wave, by kind: alive now plus still to spawn (re-derived every tick)
@@ -449,6 +462,7 @@ export function useGame() {
     bestWaves,
     newRecord,
     restoredFromSave,
-    restart
+    restart,
+    stats: statsRef.current,
   };
 }

@@ -1,6 +1,7 @@
 import { DamageType, EnemyInstance, Point, Projectile, TargetingMode, TowerInstance, TowerType } from '../types';
 import { ENEMY_TYPES, PATH, TOWER_STATS, WaveConfig, getEnemyHealth, getFireInterval, getWaveConfig, isBoss } from '../constants';
 import type { SoundName } from '../lib/audio';
+import { RunStats, creditDamage } from './stats';
 
 // The game's rules, free of React and rendering: one fixed-size step of the battle at a time.
 // The game (useGame) and the balance simulator (tools/balance) both run on this, so what the
@@ -28,6 +29,7 @@ export interface SimState {
   towers: TowerInstance[];
   projectiles: Projectile[];
   wave: WaveRun;
+  stats?: RunStats; // filled in when given (the game keeps one per run; the balance tool doesn't)
 }
 
 export interface StepResult {
@@ -117,6 +119,8 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
   let moneyEarned = 0;
   let livesLost = 0;
   const wave = s.wave;
+  const stats = s.stats;
+  if (stats && wave.active) stats.battleTime += dt;
 
   // 1. Spawning
   if (wave.toSpawn > 0 && wave.config) {
@@ -157,15 +161,26 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
     const slowDuration = Math.max(0, enemy.slowDuration - dt);
     const slowMult = slowDuration > 0 ? enemy.slowMultiplier : 1;
     let health = enemy.health;
+    let lastHitBy = enemy.lastHitBy;
     const burnDuration = Math.max(0, enemy.burnDuration - dt);
-    if (burnDuration > 0) health -= enemy.burnDamagePerSec * (enemyType.resistances?.[DamageType.FIRE] ?? 1) * dt;
+    if (burnDuration > 0) {
+      const burn = enemy.burnDamagePerSec * (enemyType.resistances?.[DamageType.FIRE] ?? 1) * dt;
+      const src = enemy.burnSource;
+      if (src) {
+        creditDamage(stats, src.id, src.type, src.level, Math.min(Math.max(0, health), burn));
+        if (health > 0 && health - burn <= 0) lastHitBy = src.id; // the fire gets the kill
+      }
+      health -= burn;
+    }
     const distanceTraveled = enemy.distanceTraveled + enemyType.speed * (enemy.speedMultiplier ?? 1) * slowMult * dt;
     const pos = moveOnPath(distanceTraveled);
-    return { ...enemy, health, distanceTraveled, x: pos.x, y: pos.y, slowDuration, burnDuration };
+    return { ...enemy, health, lastHitBy, distanceTraveled, x: pos.x, y: pos.y, slowDuration, burnDuration };
   }).filter(enemy => {
     // An enemy that burned to death on the exit tile counts as a kill, not a leak
     if (enemy.distanceTraveled >= PATH_LENGTH && enemy.health > 0) {
-      livesLost += ENEMY_TYPES[enemy.type].leakDamage ?? 1;
+      const leak = ENEMY_TYPES[enemy.type].leakDamage ?? 1;
+      livesLost += leak;
+      if (stats) stats.livesLostByType[enemy.type] = (stats.livesLostByType[enemy.type] ?? 0) + leak;
       return false;
     }
     return true;
@@ -208,10 +223,20 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
       if (hit || targetsHit.length > 0 || p.splashRadius) ev.explosion(hitX, hitY, TOWER_STATS[p.type].color, p.splashRadius ? 15 : 6);
       if (p.splashRadius) ev.sound(p.slowEffect ? 'freeze' : 'explosion', hitX, hitY);
 
+      let touched = 0; // living enemies this shot damaged
       const processHit = (e: EnemyInstance, dmg: number) => {
         const res = ENEMY_TYPES[e.type].resistances?.[p.damageType] ?? 1;
         const resistance = p.armorPiercing ? Math.max(1, res) : res;
-        const next = { ...e, health: e.health - dmg * resistance, lastHitTime: now, hitAngle: Math.atan2(e.y - p.y, e.x - p.x) };
+        if (e.health > 0) {
+          touched++;
+          const dealt = Math.min(e.health, dmg * resistance);
+          creditDamage(stats, p.sourceId, p.type, p.sourceLevel ?? 1, dealt);
+          if (stats && dealt > stats.biggestHit) stats.biggestHit = dealt;
+        }
+        const next = {
+          ...e, health: e.health - dmg * resistance, lastHitTime: now, hitAngle: Math.atan2(e.y - p.y, e.x - p.x),
+          lastHitBy: p.sourceId ?? e.lastHitBy,
+        };
         if (p.slowEffect) {
           next.slowDuration = 2.0;
           next.slowMultiplier = p.slowEffect;
@@ -219,6 +244,7 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
         if (p.burnDamage && p.burnDuration) {
           next.burnDuration = p.burnDuration;
           next.burnDamagePerSec = p.burnDamage;
+          if (p.sourceId) next.burnSource = { id: p.sourceId, type: p.type, level: p.sourceLevel ?? 1 };
         }
         return next;
       };
@@ -233,8 +259,13 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
       }
 
       // Piercing rounds keep flying until they reach the end of their range
-      if (p.isPiercing && moveStep < distToDest) {
+      const flying = p.isPiercing && moveStep < distToDest;
+      if (flying) {
         nextProjs.push({ ...p, x: p.x + dx * (moveStep / distToDest), y: p.y + dy * (moveStep / distToDest), progress: flightProgress(p, distToDest - moveStep) });
+      } else if (stats) {
+        // The shot is over: it hit if it damaged anyone on the way (piercing) or where it landed
+        if ((p.isPiercing ? p.hitEnemyIds.length : touched) > 0) stats.shotsHit++;
+        else stats.shotsMissed++;
       }
     } else {
       const ratio = moveStep / distToDest;
@@ -254,6 +285,13 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
     const type = ENEMY_TYPES[e.type];
     const reward = Math.round(type.reward * (e.rewardMultiplier ?? 1));
     moneyEarned += reward;
+    if (stats) {
+      stats.kills++;
+      stats.killsByType[e.type] = (stats.killsByType[e.type] ?? 0) + 1;
+      stats.creditsEarned += reward;
+      const rec = e.lastHitBy ? stats.towers[e.lastHitBy] : undefined;
+      if (rec) rec.kills++;
+    }
     ev.explosion(e.x, e.y, type.color, 12);
     ev.sound(e.type === 'COLOSSUS' ? 'deathBoss' : 'death', e.x, e.y);
     ev.text(e.x, e.y, `+$${reward}`, '#00f2ff');
@@ -322,7 +360,10 @@ export const step = (s: SimState, dt: number, ev: SimEvents = NO_EVENTS, rng: ()
         burnDuration: stats.burnDuration,
         progress: 0,
         hitEnemyIds: [],
+        sourceId: tower.id,
+        sourceLevel: tower.level,
       });
+      if (s.stats) s.stats.shotsFired++;
       lastFired -= fireInterval; // keep the overflow so the rate of fire stays exact
       ev.sound(FIRE_SOUND[tower.type], tower.x, tower.y);
     }
