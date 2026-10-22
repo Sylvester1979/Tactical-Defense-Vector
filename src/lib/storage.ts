@@ -15,6 +15,7 @@ export interface SavedRun {
   waveNumber: number; // last cleared wave
   gameSpeed: number;
   towers: Pick<TowerInstance, 'id' | 'type' | 'baseType' | 'x' | 'y' | 'level' | 'targetingMode' | 'invested'>[];
+  stats?: unknown; // the run's statistics so far (validated by restoreStats)
 }
 
 export interface BestRecord {

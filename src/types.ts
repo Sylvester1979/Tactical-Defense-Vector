@@ -97,6 +97,8 @@ export interface EnemyInstance {
   burnDamagePerSec: number;
   speedMultiplier?: number;   // Wave-level speed modifier
   rewardMultiplier?: number;  // Wave-level reward modifier
+  lastHitBy?: string;         // tower id that last damaged it (credited with the kill)
+  burnSource?: { id: string; type: TowerType; level: number }; // tower whose fire is burning it
 }
 
 export interface Projectile {
@@ -119,6 +121,8 @@ export interface Projectile {
   burnDuration?: number;
   progress: number; // Flight fraction, 0 at the muzzle → 1 at the target
   hitEnemyIds: string[]; // For piercing
+  sourceId?: string;     // the tower that fired it
+  sourceLevel?: number;
   startX: number;
   startY: number;
   startZ: number;
