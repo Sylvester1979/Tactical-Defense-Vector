@@ -17,9 +17,9 @@ interface RunSummaryProps {
 }
 
 const Tile: React.FC<{ label: string; value: React.ReactNode; sub?: React.ReactNode; color?: string }> = ({ label, value, sub, color }) => (
-  <div className="rounded-xl bg-black/30 border border-white/[0.06] px-3.5 py-3 text-left">
+  <div className="rounded-xl bg-black/30 border border-white/[0.06] px-3.5 py-2.5 text-left">
     <div className="text-[11px] uppercase tracking-[0.14em] text-white/55 font-display font-semibold">{label}</div>
-    <div className="mt-1 font-mono font-bold text-[24px] leading-tight tabular-nums" style={{ color: color ?? '#ffffff' }}>{value}</div>
+    <div className="mt-0.5 font-mono font-bold text-[22px] leading-tight tabular-nums" style={{ color: color ?? '#ffffff' }}>{value}</div>
     {sub && <div className="mt-0.5 text-[12px] text-white/55 font-mono tabular-nums">{sub}</div>}
   </div>
 );
@@ -46,19 +46,22 @@ export const RunSummary: React.FC<RunSummaryProps> = ({ stats, wavesHeld, bestWa
 
   const leaks = Object.entries(stats.livesLostByType).sort((a, b) => b[1] - a[1]);
 
+  // Every enemy kind the run met, in the game's own order: how many died and how many lives it took
+  const kinds = Object.keys(ENEMY_TYPES).filter(k => stats.killsByType[k] || stats.livesLostByType[k]);
+
   return (
     <motion.div
       initial={{ scale: 0.94, y: 16 }}
       animate={{ scale: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="relative w-[min(820px,calc(100vw-48px))] max-h-[calc(100vh-48px)] overflow-y-auto rounded-2xl border border-accent-red/30 bg-[#11151b]/95 px-8 py-7 shadow-[0_30px_90px_-20px_rgba(255,77,77,0.35)]"
+      className="relative w-[min(820px,calc(100vw-48px))] max-h-[calc(100vh-48px)] overflow-y-auto rounded-2xl border border-accent-red/30 bg-[#11151b]/95 px-8 py-6 shadow-[0_30px_90px_-20px_rgba(255,77,77,0.35)]"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent-red/70 to-transparent" />
 
       <div className="flex items-end gap-4">
         <div>
           <div className="font-display font-semibold text-[12px] uppercase tracking-[0.3em] text-accent-red">Game over</div>
-          <h2 className="mt-2 font-display font-bold text-[40px] leading-none tracking-[0.02em] text-white">Defense breached</h2>
+          <h2 className="mt-1.5 font-display font-bold text-[34px] leading-none tracking-[0.02em] text-white">Defense breached</h2>
           <p className="mt-2 text-[15px] text-white/70">
             You held <span className="text-white font-semibold">{wavesHeld} wave{wavesHeld === 1 ? '' : 's'}</span> · best {bestWaves}
           </p>
@@ -70,7 +73,7 @@ export const RunSummary: React.FC<RunSummaryProps> = ({ stats, wavesHeld, bestWa
         )}
       </div>
 
-      <div className="mt-6 grid grid-cols-4 gap-2.5">
+      <div className="mt-4 grid grid-cols-4 gap-2.5">
         <Tile label="Run time" value={formatDuration(stats.runTime)} sub={`under fire ${formatDuration(stats.battleTime)}`} />
         <Tile label="Destroyed" value={stats.kills.toLocaleString()} sub={`${stats.towersBuilt} towers built`} />
         <Tile label="Damage dealt" value={formatBig(stats.damage)} sub={`biggest hit ${formatBig(stats.biggestHit)}`} color="#00f2ff" />
@@ -82,7 +85,7 @@ export const RunSummary: React.FC<RunSummaryProps> = ({ stats, wavesHeld, bestWa
       </div>
 
       {mvp && mvp.dealt > 0 && (
-        <div className="mt-5 grid grid-cols-[230px_minmax(0,1fr)] gap-5">
+        <div className="mt-4 grid grid-cols-[230px_minmax(0,1fr)] gap-5">
           <div
             className="rounded-xl border px-4 py-3.5 text-left"
             style={{ borderColor: `${TOWER_STATS[mvp.type].color}66`, background: `${TOWER_STATS[mvp.type].color}14` }}
@@ -107,22 +110,39 @@ export const RunSummary: React.FC<RunSummaryProps> = ({ stats, wavesHeld, bestWa
                 </div>
               ))}
             </div>
-            {leaks.length > 0 && (
-              <p className="mt-3 text-[13px] text-white/65">
-                Lives lost to{' '}
-                {leaks.map(([kind, n], i) => (
-                  <React.Fragment key={kind}>
-                    {i > 0 && ' · '}
-                    <span className={i === 0 ? 'text-white font-semibold' : ''}>{ENEMY_TYPES[kind]?.name ?? kind} {n}</span>
-                  </React.Fragment>
-                ))}
-              </p>
-            )}
           </div>
         </div>
       )}
 
-      <div className="mt-6 flex justify-end">
+      {kinds.length > 0 && (
+        <div className="mt-4 text-left">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-white/55 font-display font-semibold">Destroyed by type</div>
+          <div className="mt-2 grid gap-2.5" style={{ gridTemplateColumns: `repeat(${kinds.length}, minmax(0, 1fr))` }}>
+            {kinds.map(kind => {
+              const e = ENEMY_TYPES[kind];
+              const killed = stats.killsByType[kind] ?? 0;
+              const lost = stats.livesLostByType[kind] ?? 0;
+              return (
+                <div key={kind} className="rounded-xl bg-black/30 border border-white/[0.06] px-3 py-2.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: e.color, boxShadow: `0 0 6px ${e.color}` }} />
+                    <span className="text-[12px] text-white/80 truncate">{e.name}</span>
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-mono font-bold text-[20px] leading-tight text-white tabular-nums">{killed.toLocaleString()}</span>
+                    <span className="text-[11px] font-mono tabular-nums text-white/55">{stats.kills > 0 ? Math.round((killed / stats.kills) * 100) : 0}%</span>
+                    {lost > 0 && (
+                      <span className="ml-auto text-[11px] font-mono font-bold tabular-nums text-[#ff8a95]" title={`${lost} ${lost === 1 ? 'life' : 'lives'} lost to it`}>−{lost} ♥</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5 flex justify-end">
         <Button variant="primary" size="lg" onClick={onRestart} className="min-w-[220px]">
           <RotateCcw className="w-4 h-4" />Play again
         </Button>
