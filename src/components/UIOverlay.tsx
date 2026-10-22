@@ -19,13 +19,14 @@ import { TowerModule } from './TowerModule';
 import { CommandDeck } from './CommandDeck';
 import { RunSummary } from './RunSummary';
 import type { RunStats } from '../game/stats';
+import { FRAME_VIEW, Insets, View, fitView, frameStyle, visibleFrame } from '../lib/view';
 import { MODIFIER_HEX, MODIFIER_STYLE } from './uiStyles';
 import { Button } from './ui/Button';
 import { Kbd } from './ui/Kbd';
 import { Modal } from './ui/Modal';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode } from '../types';
-import { TOWER_STATS, INITIAL_LIVES, WAVES, CANVAS_WIDTH, CANVAS_HEIGHT, RELOCATION_FEE, getWaveConfig } from '../constants';
+import { TOWER_STATS, INITIAL_LIVES, WAVES, RELOCATION_FEE, getWaveConfig } from '../constants';
 
 interface UIOverlayProps {
   gameState: GameState;
@@ -45,7 +46,8 @@ interface UIOverlayProps {
   onSetTargetingMode: (id: string, mode: TargetingMode) => void;
   placingType: TowerType | null;
   setPlacingType: (type: TowerType | null) => void;
-  renderCanvas: React.ReactNode;
+  // The battlefield, framed by the view the layout works out (it fills the window behind the HUD)
+  renderCanvas: (view: View) => React.ReactNode;
   bestWaves: number;
   newRecord: boolean;
   // Flat screen-space grid over the arena; it suits the 2D renderer but not the 3D scene's perspective
@@ -103,6 +105,12 @@ const ModifierChip: React.FC<{ modifier: WaveModifier; next?: boolean }> = ({ mo
   );
 };
 
+// The HUD's footprint over the battlefield: the top bar and the sidebar. The camera frames the
+// platform in what's left.
+const HEADER_H = 56;
+const SIDEBAR_W = 336;
+const HUD_INSETS: Insets = { top: HEADER_H, right: SIDEBAR_W, bottom: 0, left: 0 };
+
 // How long the wave-start banner stays up
 const WAVE_BANNER_MS = 2600;
 
@@ -157,20 +165,13 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   const [pauseControls, setPauseControls] = React.useState(false);
   React.useEffect(() => { if (!pauseMenu) setPauseControls(false); }, [pauseMenu]);
 
-  // --- Responsive arena scaling: grow the fixed-resolution canvas to fill
-  //     the available viewport while preserving its 1000×800 aspect ratio. ---
-  const viewportRef = React.useRef<HTMLDivElement>(null);
-  const [arenaScale, setArenaScale] = React.useState(1);
-  React.useEffect(() => {
-    const el = viewportRef.current;
+  // The battlefield fills the window; frame the platform in the part the HUD leaves free
+  const layerRef = React.useRef<HTMLDivElement>(null);
+  const [view, setView] = React.useState<View>(FRAME_VIEW);
+  React.useLayoutEffect(() => {
+    const el = layerRef.current;
     if (!el) return;
-    const recompute = () => {
-      const k = Math.min(
-        el.clientWidth / CANVAS_WIDTH,
-        el.clientHeight / CANVAS_HEIGHT
-      );
-      setArenaScale(Math.max(0.4, k));
-    };
+    const recompute = () => setView(fitView(el.clientWidth, el.clientHeight, HUD_INSETS));
     recompute();
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
@@ -206,11 +207,131 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   }, [gameState.lives]);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-dark-bg text-text-primary">
+    <div className="relative h-screen overflow-hidden bg-[#05080e] text-text-primary">
+      {/* BATTLEFIELD — the whole window, behind the HUD */}
+      <div
+        ref={layerRef}
+        className="absolute inset-0"
+        onContextMenu={e => {
+          if (!placingType && !gameState.relocatingTowerId) return;
+          e.preventDefault(); // right-click cancels placing or relocating
+          setPlacingType(null);
+          onCancelRelocation();
+        }}
+      >
+        {renderCanvas(view)}
+
+        {/* Things drawn in frame coordinates ride on the same transform as the battlefield */}
+        <div className="pointer-events-none" style={frameStyle(view)}>
+          {screenGrid && (
+            <div className="absolute inset-0 grid grid-cols-[repeat(20,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] opacity-10">
+              {[...Array(300)].map((_, i) => (
+                <div key={i} className="border-[0.5px] border-border-dim" />
+              ))}
+            </div>
+          )}
+          {selectedTower && !gameState.relocatingTowerId && (
+            <TowerModule
+              tower={selectedTower}
+              gameState={gameState}
+              bounds={visibleFrame(view, HUD_INSETS)}
+              onUpgrade={onUpgradeTower}
+              onSpecialize={onSpecializeTower}
+              onSell={onSellTower}
+              onStartRelocation={onStartRelocation}
+              onSetTargetingMode={onSetTargetingMode}
+              onClose={() => onSelectTower(null)}
+            />
+          )}
+        </div>
+
+        {/* Core breach flash — red edges, stronger the more lives were lost */}
+        <AnimatePresence>
+          {coreHit && (
+            <motion.div
+              key={coreHit.key}
+              className="absolute inset-0 pointer-events-none z-40"
+              initial={{ opacity: Math.min(0.9, 0.35 + coreHit.lost * 0.12) }}
+              animate={{ opacity: 0 }}
+              transition={{ duration: 0.8, ease: 'easeOut' }}
+              onAnimationComplete={() => setCoreHit(c => (c && c.key === coreHit.key ? null : c))}
+              style={{ background: 'radial-gradient(ellipse at center, transparent 62%, rgba(239,68,68,0.45) 100%)', boxShadow: 'inset 0 0 0 2px rgba(239,68,68,0.6)' }}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Screen-space callouts, kept inside the part of the field the HUD leaves free */}
+        <div className="absolute pointer-events-none" style={{ top: HUD_INSETS.top, right: HUD_INSETS.right, bottom: HUD_INSETS.bottom, left: HUD_INSETS.left }}>
+        {/* Wave start banner */}
+        <AnimatePresence>
+          {waveBanner && (() => {
+            const mod = waveBanner.modifier;
+            const accent = mod === WaveModifier.NONE ? '#ffb800' : MODIFIER_HEX[mod];
+            return (
+              <motion.div
+                key={waveBanner.key}
+                className="absolute left-0 right-0 bottom-[16%] flex justify-center pointer-events-none z-40"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+              >
+                <div
+                  className="px-10 py-3 flex flex-col items-center bg-[#0d1117]/75 backdrop-blur-sm border-y"
+                  style={{ borderColor: `${accent}66`, boxShadow: `0 0 40px ${accent}22` }}
+                >
+                  <span className="text-[10px] font-mono uppercase tracking-[0.5em]" style={{ color: `${accent}cc` }}>
+                    Incoming · {waveBanner.count} {waveBanner.count === 1 ? 'enemy' : 'enemies'}
+                  </span>
+                  <span className="font-display font-bold text-4xl tracking-[0.06em] text-white leading-tight">
+                    WAVE {waveBanner.wave}
+                  </span>
+                  {mod !== WaveModifier.NONE && (
+                    <span className="text-xs font-black font-mono uppercase tracking-[0.3em]" style={{ color: accent }}>
+                      {MODIFIER_STYLE[mod].label} · {MODIFIER_STYLE[mod].desc}
+                    </span>
+                  )}
+                  {waveBanner.boss && (
+                    <span className="mt-1 text-[11px] font-black font-mono uppercase tracking-[0.3em] text-accent-red animate-pulse">
+                      ⚠ Dreadnought inbound
+                    </span>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })()}
+        </AnimatePresence>
+        {/* Placement / relocation hint: a corner strip, so the whole field stays clickable */}
+        {(placingType || relocatingTower) && (() => {
+          const relocating = !!relocatingTower;
+          const accent = relocating ? '#ffb800' : '#00f2ff';
+          return (
+            <div
+              className="absolute bottom-3 left-3 z-50 flex items-center gap-3 pl-3 pr-1.5 py-1.5 rounded-lg bg-[#0d1117]/85 backdrop-blur-md border font-mono text-[10px] uppercase tracking-wider pointer-events-none"
+              style={{ borderColor: `${accent}66`, color: accent }}
+            >
+              {relocating ? <MoveVertical className="w-3.5 h-3.5 animate-pulse" /> : <Crosshair className="w-3.5 h-3.5 animate-pulse" />}
+              <span>
+                {relocating
+                  ? <>Moving {TOWER_STATS[relocatingTower!.type].name} · ${RELOCATION_FEE} · click a free spot</>
+                  : <>Placing {TOWER_STATS[placingType!].name} · click a free spot</>}
+              </span>
+              <button
+                onClick={() => { setPlacingType(null); onCancelRelocation(); }}
+                className="pointer-events-auto px-2 py-1 rounded border border-white/15 text-white/60 hover:text-white hover:border-white/40 transition-colors"
+              >
+                Cancel · Esc
+              </button>
+            </div>
+          );
+        })()}
+        </div>
+      </div>
+
       {/* TOP BAR */}
       <header
-        className="h-14 shrink-0 relative z-[80] flex items-center px-5 gap-3 border-b border-white/[0.06]"
-        style={{ background: 'linear-gradient(to bottom, rgba(20,23,30,0.98), rgba(14,17,23,0.99))', backdropFilter: 'blur(24px)' }}
+        className="absolute top-0 inset-x-0 h-14 z-[80] flex items-center px-5 gap-3 border-b border-white/[0.06]"
+        style={{ background: 'linear-gradient(to bottom, rgba(16,19,25,0.86), rgba(12,15,20,0.78))', backdropFilter: 'blur(18px)' }}
       >
         {/* hairline cyan glow along the bottom edge */}
         <div className="pointer-events-none absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-accent-cyan/20 to-transparent" />
@@ -411,146 +532,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
         </div>
       </header>
 
-      {/* MAIN LAYOUT */}
-      <main className="flex flex-1 overflow-hidden">
-        {/* GAME VIEWPORT */}
-        <section
-          ref={viewportRef}
-          className="flex-1 overflow-hidden flex items-center justify-center bg-[radial-gradient(circle_at_50%_50%,#161b22_0%,#0d1117_100%)]"
-        >
-          {/*
-            Two-div scaling trick:
-            - Outer div claims the correct LAYOUT space (scaled dimensions) so
-              no overflow / clipping occurs and flex centering works.
-            - Inner div contains the raw 1000×800 content and CSS-scales it
-              from the top-left corner to visually fill the outer box.
-              All overlays (TowerModule, relocation, grid) live here so they
-              scale together and stay pixel-aligned with the canvas.
-          */}
-          <div style={{
-            width: CANVAS_WIDTH * arenaScale,
-            height: CANVAS_HEIGHT * arenaScale,
-            position: 'relative',
-            flexShrink: 0,
-          }}>
-            <div
-              className="absolute top-0 left-0 border border-border-dim"
-              style={{ transform: `scale(${arenaScale})`, transformOrigin: 'top left' }}
-              onContextMenu={e => {
-                if (!placingType && !gameState.relocatingTowerId) return;
-                e.preventDefault(); // right-click cancels placing or relocating
-                setPlacingType(null);
-                onCancelRelocation();
-              }}
-            >
-            {renderCanvas}
-
-            {/* Tower Module Overlay */}
-            {selectedTower && !gameState.relocatingTowerId && (
-              <TowerModule
-                tower={selectedTower}
-                gameState={gameState}
-                onUpgrade={onUpgradeTower}
-                onSpecialize={onSpecializeTower}
-                onSell={onSellTower}
-                onStartRelocation={onStartRelocation}
-                onSetTargetingMode={onSetTargetingMode}
-                onClose={() => onSelectTower(null)}
-              />
-            )}
-
-            {/* Grid Overlay simulation */}
-            {screenGrid && (
-              <div className="absolute inset-0 pointer-events-none grid grid-cols-[repeat(20,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] opacity-10">
-                 {[...Array(300)].map((_, i) => (
-                   <div key={i} className="border-[0.5px] border-border-dim" />
-                 ))}
-              </div>
-            )}
-
-            {/* Core breach flash — red edges, stronger the more lives were lost */}
-            <AnimatePresence>
-              {coreHit && (
-                <motion.div
-                  key={coreHit.key}
-                  className="absolute inset-0 pointer-events-none z-40"
-                  initial={{ opacity: Math.min(0.9, 0.35 + coreHit.lost * 0.12) }}
-                  animate={{ opacity: 0 }}
-                  transition={{ duration: 0.8, ease: 'easeOut' }}
-                  onAnimationComplete={() => setCoreHit(c => (c && c.key === coreHit.key ? null : c))}
-                  style={{ background: 'radial-gradient(ellipse at center, transparent 62%, rgba(239,68,68,0.45) 100%)', boxShadow: 'inset 0 0 0 2px rgba(239,68,68,0.6)' }}
-                />
-              )}
-            </AnimatePresence>
-
-            {/* Wave start banner */}
-            <AnimatePresence>
-              {waveBanner && (() => {
-                const mod = waveBanner.modifier;
-                const accent = mod === WaveModifier.NONE ? '#ffb800' : MODIFIER_HEX[mod];
-                return (
-                  <motion.div
-                    key={waveBanner.key}
-                    className="absolute left-0 right-0 bottom-[16%] flex justify-center pointer-events-none z-40"
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    transition={{ duration: 0.35, ease: 'easeOut' }}
-                  >
-                    <div
-                      className="px-10 py-3 flex flex-col items-center bg-[#0d1117]/75 backdrop-blur-sm border-y"
-                      style={{ borderColor: `${accent}66`, boxShadow: `0 0 40px ${accent}22` }}
-                    >
-                      <span className="text-[10px] font-mono uppercase tracking-[0.5em]" style={{ color: `${accent}cc` }}>
-                        Incoming · {waveBanner.count} {waveBanner.count === 1 ? 'enemy' : 'enemies'}
-                      </span>
-                      <span className="font-display font-bold text-4xl tracking-[0.06em] text-white leading-tight">
-                        WAVE {waveBanner.wave}
-                      </span>
-                      {mod !== WaveModifier.NONE && (
-                        <span className="text-xs font-black font-mono uppercase tracking-[0.3em]" style={{ color: accent }}>
-                          {MODIFIER_STYLE[mod].label} · {MODIFIER_STYLE[mod].desc}
-                        </span>
-                      )}
-                      {waveBanner.boss && (
-                        <span className="mt-1 text-[11px] font-black font-mono uppercase tracking-[0.3em] text-accent-red animate-pulse">
-                          ⚠ Dreadnought inbound
-                        </span>
-                      )}
-                    </div>
-                  </motion.div>
-                );
-              })()}
-            </AnimatePresence>
-
-            {/* Placement / relocation hint: a corner strip, so the whole field stays clickable */}
-            {(placingType || relocatingTower) && (() => {
-              const relocating = !!relocatingTower;
-              const accent = relocating ? '#ffb800' : '#00f2ff';
-              return (
-                <div
-                  className="absolute bottom-3 left-3 z-50 flex items-center gap-3 pl-3 pr-1.5 py-1.5 rounded-lg bg-[#0d1117]/85 backdrop-blur-md border font-mono text-[10px] uppercase tracking-wider pointer-events-none"
-                  style={{ borderColor: `${accent}66`, color: accent }}
-                >
-                  {relocating ? <MoveVertical className="w-3.5 h-3.5 animate-pulse" /> : <Crosshair className="w-3.5 h-3.5 animate-pulse" />}
-                  <span>
-                    {relocating
-                      ? <>Moving {TOWER_STATS[relocatingTower!.type].name} · ${RELOCATION_FEE} · click a free spot</>
-                      : <>Placing {TOWER_STATS[placingType!].name} · click a free spot</>}
-                  </span>
-                  <button
-                    onClick={() => { setPlacingType(null); onCancelRelocation(); }}
-                    className="pointer-events-auto px-2 py-1 rounded border border-white/15 text-white/60 hover:text-white hover:border-white/40 transition-colors"
-                  >
-                    Cancel · Esc
-                  </button>
-                </div>
-              );
-            })()}
-            </div>{/* end scale-inner */}
-          </div>{/* end layout-outer */}
-        </section>
-
+      {/* SIDEBAR */}
+      <div className="absolute right-0 bottom-0 z-[60] flex" style={{ top: HEADER_H, width: SIDEBAR_W }}>
         <CommandDeck
           gameState={gameState}
           towers={towers}
@@ -558,7 +541,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           setPlacingType={setPlacingType}
           waveRemaining={waveRemaining}
         />
-      </main>
+      </div>
 
       {/* OVERLAYS */}
       <ConfirmDialog

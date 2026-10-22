@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, ENEMY_TYPES, PATH, TOWER_STATS } from '../constants';
 import { EnemyInstance, FloatingText, Particle, Point, Projectile, TowerInstance, TowerType } from '../types';
 import { fromIso } from '../lib/iso';
+import type { View } from '../lib/view';
 import { checkPlacement } from '../lib/placement';
 import { createStage } from './stage';
 import { buildWorld } from './world';
@@ -29,6 +30,7 @@ export interface SceneInputs {
   coreIntegrity: number;
   hoveredTowerId: string | null;
   mouse: Point | null; // cursor in game coordinates while placing or relocating
+  view: View;          // where the 1000×800 frame sits in the (full-window) host
 }
 
 // toIso maps one game px along x to 0.6 screen px horizontally; that axis sits at 45° to the view
@@ -362,10 +364,11 @@ export const createGameScene = (
       stash.add(buildTower(type, { light: false }).root, buildGhost(type, TOWER_STATS[type].color).root);
     }
     for (const kind of Object.keys(ENEMY_TYPES)) stash.add(buildEnemy(kind).root);
+    // Compiled while visible but out of sight: under the deck, and the range rings off screen
+    stash.position.y = -60;
     scene.add(stash);
-    // Range overlays only compile while visible
-    range.show(500, 400, 100, '#ffffff');
-    hoverRange.show(500, 400, 100, '#ffffff');
+    range.show(-5000, -5000, 100, '#ffffff');
+    hoverRange.show(-5000, -5000, 100, '#ffffff');
     await stage.renderer.compileAsync(scene, camera);
     range.hide();
     hoverRange.hide();
@@ -396,9 +399,29 @@ export const createGameScene = (
   const camBase = camera.position.clone();
   const v = new THREE.Vector3();
 
+  // The view the camera is framed for, and the host size it was framed at
+  let view: View = { k: 1, ox: 0, oy: 0, w: CANVAS_WIDTH, h: CANVAS_HEIGHT };
+  let viewKey = '';
+
+  // Frame the camera so the 1000×800 frame lands where the view puts it. The camera looks at the
+  // frame's centre; shifting the (orthographic) frustum moves that point on screen, and its size
+  // sets the zoom: k screen px per frame px.
+  const applyView = () => {
+    const w = host.clientWidth || CANVAS_WIDTH, h = host.clientHeight || CANVAS_HEIGHT;
+    const s = PX_PER_UNIT * view.k; // screen px per world unit
+    const dx = (CANVAS_WIDTH / 2) * view.k + view.ox - w / 2;
+    const dy = (CANVAS_HEIGHT / 2) * view.k + view.oy - h / 2;
+    const cx = -dx / s, cy = dy / s;
+    camera.left = cx - w / (2 * s); camera.right = cx + w / (2 * s);
+    camera.top = cy + h / (2 * s); camera.bottom = cy - h / (2 * s);
+    camera.updateProjectionMatrix();
+  };
+
+  // World point → frame coordinates (what the HUD draws in)
   const project = (p: THREE.Vector3) => {
     v.copy(p).project(camera);
-    return { x: (v.x + 1) / 2 * CANVAS_WIDTH, y: (1 - v.y) / 2 * CANVAS_HEIGHT };
+    const w = host.clientWidth || CANVAS_WIDTH, h = host.clientHeight || CANVAS_HEIGHT;
+    return { x: ((v.x + 1) / 2 * w - view.ox) / view.k, y: ((1 - v.y) / 2 * h - view.oy) / view.k };
   };
 
   const tick = () => {
@@ -408,19 +431,24 @@ export const createGameScene = (
     t += dt;
     frame++;
 
-    // Render at the on-screen size (the arena is CSS-scaled) times the device pixel ratio
-    if (frame % 20 === 1) {
-      const shown = host.getBoundingClientRect().width / CANVAS_WIDTH || 1;
-      const pr = Math.min(2, Math.max(0.5, window.devicePixelRatio * shown * quality.scale));
-      if (Math.abs(pr - pixelRatio) > 0.02) {
+    const inputs = read();
+
+    // The host fills the window: render at its size times the device pixel ratio (scaled down by
+    // the adaptive quality), and reframe the camera whenever the view or the host size changes
+    const key = `${inputs.view.k}|${inputs.view.ox}|${inputs.view.oy}|${host.clientWidth}|${host.clientHeight}`;
+    if (frame % 20 === 1 || key !== viewKey) {
+      const pr = Math.min(2, Math.max(0.5, window.devicePixelRatio * quality.scale));
+      if (Math.abs(pr - pixelRatio) > 0.02 || key !== viewKey) {
         pixelRatio = pr;
+        viewKey = key;
+        view = inputs.view;
         stage.resize(pr);
-        hud.width = Math.round(CANVAS_WIDTH * pr);
-        hud.height = Math.round(CANVAS_HEIGHT * pr);
+        applyView();
+        hud.width = Math.round((host.clientWidth || CANVAS_WIDTH) * pr);
+        hud.height = Math.round((host.clientHeight || CANVAS_HEIGHT) * pr);
       }
     }
 
-    const inputs = read();
     world.setIntegrity(inputs.coreIntegrity);
     world.update(dt);
 
@@ -626,10 +654,12 @@ export const createGameScene = (
   // ── HUD: health bars, floating texts, placement hint, damage tint ──
   const drawHud = (inputs: SceneInputs) => {
     const ctx = hudCtx;
-    const pr = hud.width / CANVAS_WIDTH;
-    ctx.setTransform(pr, 0, 0, pr, 0, 0);
-    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, hud.width, hud.height);
     if (!loaded) return;
+    // Draw in frame coordinates: the view's scale and offset, times the canvas's pixel ratio
+    const pr = pixelRatio || 1;
+    ctx.setTransform(pr * view.k, 0, 0, pr * view.k, pr * view.ox, pr * view.oy);
     const now = Date.now();
     for (const e of inputs.enemies) {
       const view = enemies.get(e.id);
@@ -686,8 +716,9 @@ export const createGameScene = (
       }
     }
     if (inputs.shakeTime > 0) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = `rgba(255, 77, 77, ${Math.min(1, inputs.shakeTime) * 0.25})`;
-      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.fillRect(0, 0, hud.width, hud.height);
     }
   };
 
