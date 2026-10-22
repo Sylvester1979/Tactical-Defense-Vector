@@ -5,7 +5,7 @@ import {
   Target,
   Activity,
   Cpu,
-  Unplug,
+  Coins,
   MoveVertical,
   X
 } from 'lucide-react';
@@ -49,14 +49,41 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   const screenPos = toIso(tower.x, tower.y, towerH + 15);
   const upgradeCost = getUpgradeCost(tower.type, tower.level);
 
+  // Placement: above the tower when it fits, else below, and always wholly inside the frame.
+  // The panel's height changes with its content (specialization choices, etc.), so it's measured.
   const MODULE_WIDTH = 280;
-  const MODULE_HEIGHT_APPROX = 300;
   const MARGIN = 8;
-  const clampedX = Math.max(MODULE_WIDTH / 2 + MARGIN, Math.min(CANVAS_WIDTH - MODULE_WIDTH / 2 - MARGIN, screenPos.x));
-  const showBelow = screenPos.y < MODULE_HEIGHT_APPROX + MARGIN;
-  const clampedY = showBelow
-    ? Math.min(screenPos.y, CANVAS_HEIGHT - MODULE_HEIGHT_APPROX - MARGIN)
-    : screenPos.y;
+  const CONNECTOR = 48; // gap between the tower and the panel, bridged by the connector line
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  const [panelH, setPanelH] = React.useState(440);
+  React.useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const measure = () => setPanelH(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Above or below the tower when the panel fits there, otherwise beside it, never over it
+  const clampX = (x: number) => Math.max(MARGIN, Math.min(CANVAS_WIDTH - MODULE_WIDTH - MARGIN, x));
+  const clampY = (y: number) => Math.max(MARGIN, Math.min(CANVAS_HEIGHT - MARGIN - panelH, y));
+  const SIDE_GAP = 36;
+  const placement: 'above' | 'below' | 'right' | 'left' =
+    screenPos.y - CONNECTOR - panelH >= MARGIN ? 'above'
+    : screenPos.y + CONNECTOR + panelH <= CANVAS_HEIGHT - MARGIN ? 'below'
+    : screenPos.x + SIDE_GAP + MODULE_WIDTH <= CANVAS_WIDTH - MARGIN ? 'right'
+    : 'left';
+  const showBelow = placement === 'below';
+  const left = placement === 'right' ? screenPos.x + SIDE_GAP
+    : placement === 'left' ? Math.max(MARGIN, screenPos.x - SIDE_GAP - MODULE_WIDTH)
+    : clampX(screenPos.x - MODULE_WIDTH / 2);
+  const top = placement === 'above' ? screenPos.y - CONNECTOR - panelH
+    : placement === 'below' ? screenPos.y + CONNECTOR
+    : clampY(screenPos.y - panelH / 2);
+  // Vertical connector from the panel's near edge to the tower (above/below placements only)
+  const connectorLen = placement === 'above' ? screenPos.y - (top + panelH) : placement === 'below' ? top - screenPos.y : 0;
+  const anchorX = Math.max(12, Math.min(MODULE_WIDTH - 12, screenPos.x - left));
   
   // Specialization Logic
   const isBaseType = isBaseTower(tower.type);
@@ -67,6 +94,8 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   const sellValue = getSellValue(tower);
   const canAffordUpgrade = gameState.money >= upgradeCost;
   const canAffordRelocation = gameState.money >= RELOCATION_FEE;
+  const levelCap = tower.level >= getMaxLevel(tower.type); // base towers specialize from here, specializations are done
+  const maxed = isSpecialized && levelCap;
   
   // Next-level preview using the same coefficients as the game engine
   const nextDamage = stats.damage * (1 + tower.level * 0.45);
@@ -75,7 +104,7 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
   return (
     <div
       className="absolute pointer-events-none cursor-crosshair z-[70]"
-      style={{ left: clampedX - MODULE_WIDTH / 2, top: clampedY }}
+      style={{ left, top, width: MODULE_WIDTH }}
     >
       <AnimatePresence>
         <motion.div
@@ -84,21 +113,22 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
           exit={{ opacity: 0, scale: 0.8, y: showBelow ? -20 : 20 }}
           className="relative pointer-events-none"
         >
-          {/* Connector Line Design — pointer-events-none so clicks pass through */}
-          {showBelow ? (
+          {/* Connector line to the tower — pointer-events-none so clicks pass through */}
+          {connectorLen > 4 && (
             <>
-              <div className="absolute pointer-events-none w-[2px] h-12 bg-accent-cyan/40 left-1/2 -top-12 -translate-x-1/2" />
-              <div className="absolute pointer-events-none w-2 h-2 bg-accent-cyan rounded-full left-1/2 -top-[50px] -translate-x-1/2 shadow-[0_0_10px_#00f2ff]" />
-            </>
-          ) : (
-            <>
-              <div className="absolute pointer-events-none w-[2px] h-12 bg-accent-cyan/40 left-1/2 -bottom-12 -translate-x-1/2" />
-              <div className="absolute pointer-events-none w-2 h-2 bg-accent-cyan rounded-full left-1/2 -bottom-[50px] -translate-x-1/2 shadow-[0_0_10px_#00f2ff]" />
+              <div
+                className="absolute pointer-events-none w-[2px] bg-accent-cyan/40 -translate-x-1/2"
+                style={{ left: anchorX, height: connectorLen, ...(showBelow ? { top: -connectorLen } : { top: panelH }) }}
+              />
+              <div
+                className="absolute pointer-events-none w-2 h-2 bg-accent-cyan rounded-full -translate-x-1/2 shadow-[0_0_10px_#00f2ff]"
+                style={{ left: anchorX, top: showBelow ? -connectorLen - 4 : panelH + connectorLen - 4 }}
+              />
             </>
           )}
 
           {/* Main Container — pointer-events-auto only on the visible panel */}
-          <div className={`w-[280px] pointer-events-auto ${showBelow ? 'mt-12' : '-translate-y-full mb-12'} bg-panel-bg/90 backdrop-blur-xl border border-white/20 rounded-xl overflow-hidden shadow-2xl`}>
+          <div ref={panelRef} className="w-[280px] pointer-events-auto bg-panel-bg/90 backdrop-blur-xl border border-white/20 rounded-xl overflow-hidden shadow-2xl">
             {/* Header */}
             <header 
               className="p-3 border-b border-white/10 flex items-center justify-between"
@@ -106,15 +136,15 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
             >
               <div className="flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-accent-cyan" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-white/90">
-                  {stats.name} <span className="text-accent-amber">MK.{tower.level}</span>
+                <span className="font-display font-semibold text-[13px] uppercase tracking-[0.08em] text-white/90">
+                  {stats.name} <span className="text-accent-amber">Lv {tower.level}</span>
                 </span>
               </div>
               <button
                 onClick={onClose}
                 className="hover:bg-white/10 p-1 rounded transition-colors"
               >
-                <X className="w-3 h-3 text-white/40" />
+                <X className="w-3.5 h-3.5 text-white/55" />
               </button>
             </header>
 
@@ -123,75 +153,75 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
               {/* Weapon Profile */}
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1 flex-wrap">
-                  <span className={`text-[8px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${DMG_STYLE[stats.damageType].cls}`}>
+                  <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${DMG_STYLE[stats.damageType].cls}`}>
                     {DMG_STYLE[stats.damageType].label}
                   </span>
                   {stats.splashRadius && (
-                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
+                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/60">
                       SPLASH {stats.splashRadius}px
                     </span>
                   )}
                   {stats.isPiercing && (
-                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
+                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/60">
                       PIERCE
                     </span>
                   )}
                   {stats.armorPiercing && (
-                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/50">
+                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border bg-white/5 border-white/10 text-white/60">
                       ARMOUR-PIERCING
                     </span>
                   )}
                   {stats.slowEffect && (
-                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-cyan-500/10 border-cyan-500/20 text-cyan-400/70">
+                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border bg-cyan-500/10 border-cyan-500/20 text-cyan-400/70">
                       SLOW {stats.slowEffect * 100}%
                     </span>
                   )}
                   {stats.burnDamage && (
-                    <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border bg-orange-500/10 border-orange-500/20 text-orange-400/70">
+                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border bg-orange-500/10 border-orange-500/20 text-orange-400/70">
                       BURN {Math.round(stats.burnDamage * towerDamage(tower) / stats.damage)}/s·{stats.burnDuration}s
                     </span>
                   )}
                 </div>
-                <p className="text-[9px] text-white/40 font-mono leading-relaxed">{stats.description}</p>
+                <p className="text-[11px] text-white/60 leading-relaxed">{stats.description}</p>
               </div>
 
               {/* Stats Grid */}
-              <div className="grid grid-cols-2 gap-2 text-[9px] font-mono">
+              <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
                 <div className="bg-black/40 p-2 rounded border border-white/5 space-y-1">
-                  <div className="flex justify-between text-white/40 uppercase">
-                    <span>Lethality</span>
-                    <Activity className="w-2 h-2" />
+                  <div className="flex justify-between text-white/55 uppercase">
+                    <span>Damage</span>
+                    <Activity className="w-2.5 h-2.5" />
                   </div>
                   <div className="flex items-baseline gap-1">
                     <span className="text-sm font-bold text-accent-red">{(stats.damage * (1 + (tower.level - 1) * 0.45)).toFixed(1)}</span>
-                    <span className="text-white/20">→ {nextDamage.toFixed(1)}</span>
+                    {!levelCap && <span className="text-white/45">→ {nextDamage.toFixed(1)}</span>}
                   </div>
                 </div>
                 <div className="bg-black/40 p-2 rounded border border-white/5 space-y-1">
-                  <div className="flex justify-between text-white/40 uppercase">
-                    <span>Aperture</span>
-                    <Target className="w-2 h-2" />
+                  <div className="flex justify-between text-white/55 uppercase">
+                    <span>Range</span>
+                    <Target className="w-2.5 h-2.5" />
                   </div>
                   <div className="flex items-baseline gap-1">
                     <span className="text-sm font-bold text-accent-cyan">{(stats.range * (1 + (tower.level - 1) * 0.1)).toFixed(0)}</span>
-                    <span className="text-white/20">→ {nextRange.toFixed(0)}</span>
+                    {!levelCap && <span className="text-white/45">→ {nextRange.toFixed(0)}</span>}
                   </div>
                 </div>
               </div>
 
               {/* Targeting Mode */}
               <div className="space-y-1">
-                <div className="text-[8px] uppercase tracking-tighter text-white/40">Target Priority</div>
+                <div className="text-[10px] uppercase tracking-[0.12em] text-white/55 font-display font-semibold">Targeting</div>
                 <div className="flex gap-1">
                   {(Object.values(TargetingMode) as TargetingMode[]).map(mode => (
                     <button
                       key={mode}
                       onClick={() => onSetTargetingMode(tower.id, mode)}
-                      title="Cycle priority (T)"
-                      className={`flex-1 py-1 rounded text-[8px] font-mono uppercase transition-all ${
+                      title="Cycle targeting (T)"
+                      className={`flex-1 py-1 rounded text-[10px] font-mono uppercase transition-all ${
                         tower.targetingMode === mode
                           ? 'bg-accent-cyan text-dark-bg font-black'
-                          : 'bg-white/5 border border-white/10 text-white/40 hover:text-white/80 hover:bg-white/10'
+                          : 'bg-white/5 border border-white/10 text-white/55 hover:text-white/85 hover:bg-white/10'
                       }`}
                     >
                       {TARGETING_LABELS[mode]}
@@ -204,11 +234,11 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
               {(() => {
                 const maxLevel = getMaxLevel(tower.type);
                 const atCap = tower.level >= maxLevel;
-                const capLabel = isBaseType && atCap ? 'SPEC READY' : isSpecialized && atCap ? 'MAXED' : `${tower.level}/${maxLevel}`;
+                const capLabel = isBaseType && atCap ? 'Ready to specialize' : isSpecialized && atCap ? 'Max level' : `${tower.level}/${maxLevel}`;
                 return (
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[8px] uppercase tracking-tighter text-white/40">
-                      <span>Evolution Path</span>
+                    <div className="flex justify-between text-[10px] uppercase tracking-[0.12em] text-white/55 font-display font-semibold">
+                      <span>Level</span>
                       <span className={atCap ? (isBaseType ? 'text-accent-amber' : 'text-accent-cyan') : ''}>{capLabel}</span>
                     </div>
                     <div className="flex gap-1 h-1">
@@ -229,8 +259,8 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                 );
               })()}
 
-              {/* Actions */}
-              <div className="flex flex-col gap-2 pt-2">
+              {/* Actions: the level-up (upgrade, or the two specializations at the base cap), then move and sell */}
+              <div className="flex flex-col gap-2 pt-1">
                 {showSpecialization ? (
                   <div className="grid grid-cols-2 gap-2">
                     {SPECIALIZATIONS[tower.type]?.map(specType => {
@@ -241,81 +271,58 @@ export const TowerModule: React.FC<TowerModuleProps> = ({
                           key={specType}
                           onClick={() => onSpecialize(tower.id, specType)}
                           disabled={!canAffordSpec}
-                          className={`py-3 px-2 flex flex-col items-center justify-center rounded-lg transition-all text-center gap-1 ${
+                          className={`py-2.5 px-2 flex flex-col items-center justify-center rounded-lg transition-all text-center gap-1 ${
                             canAffordSpec
                               ? 'bg-accent-amber hover:brightness-110 active:scale-95 text-dark-bg'
-                              : 'bg-white/5 text-white/20 cursor-not-allowed border border-white/5'
+                              : 'bg-white/5 text-white/40 cursor-not-allowed border border-white/10'
                           }`}
                         >
-                          <span className="text-[10px] font-black uppercase leading-none">{specStats.name}</span>
-                          <span className="text-[9px] opacity-70 font-mono">${specStats.cost}</span>
+                          <span className="font-display font-semibold text-[12px] uppercase tracking-[0.06em] leading-none">{specStats.name}</span>
+                          <span className="text-[11px] font-mono opacity-80">${specStats.cost}</span>
                         </button>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onUpgrade(tower.id)}
-                      title="Overclock (U)"
-                      disabled={!canAffordUpgrade || (tower.level >= 5 && isSpecialized)}
-                      className={`flex-[2] py-2 px-3 flex items-center justify-between rounded-lg transition-all group ${
-                        canAffordUpgrade && !(tower.level >= 5 && isSpecialized)
-                          ? 'bg-accent-cyan hover:brightness-110 active:scale-95 text-dark-bg font-black uppercase text-[10px]'
-                          : 'bg-white/5 text-white/20 cursor-not-allowed text-[10px] uppercase border border-white/5'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Zap className={`w-3 h-3 ${canAffordUpgrade ? 'fill-current' : ''}`} />
-                        <span>{(tower.level >= 5 && isSpecialized) ? 'Maxed' : 'Overclock'}</span>
-                      </div>
-                      {!(tower.level >= 5 && isSpecialized) && <span className="opacity-80">${upgradeCost}</span>}
-                    </button>
-
-                    <button
-                      onClick={() => onStartRelocation(tower.id)}
-                      disabled={!canAffordRelocation}
-                      className={`flex-1 py-2 px-3 flex items-center justify-center rounded-lg border transition-all active:scale-95 group ${
-                        canAffordRelocation 
-                        ? 'bg-white/5 hover:bg-accent-amber/20 border-white/5 hover:border-accent-amber/40 text-white/40 hover:text-accent-amber'
-                        : 'bg-white/5 border-white/5 text-white/10 cursor-not-allowed'
-                      }`}
-                      title={`Relocate ($${RELOCATION_FEE}) (R)`}
-                    >
-                      <MoveVertical className="w-3 h-3" />
-                    </button>
-
-                    <button
-                      onClick={() => onSell(tower.id)}
-                      title={`Sell (+$${sellValue}) (S ×2)`}
-                      className="flex-1 py-2 px-3 flex items-center justify-center rounded-lg bg-white/5 hover:bg-accent-red/20 border border-white/5 hover:border-accent-red/40 text-white/40 hover:text-accent-red transition-all active:scale-95 group"
-                    >
-                      <Unplug className="w-3 h-3 group-hover:animate-pulse" />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => onUpgrade(tower.id)}
+                    title="Upgrade (U)"
+                    disabled={!canAffordUpgrade || maxed}
+                    className={`h-9 px-3 flex items-center justify-between rounded-lg transition-all font-display font-semibold uppercase tracking-[0.08em] text-[12px] ${
+                      canAffordUpgrade && !maxed
+                        ? 'bg-accent-cyan hover:brightness-110 active:scale-95 text-dark-bg'
+                        : 'bg-white/5 text-white/40 cursor-not-allowed border border-white/10'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Zap className={`w-3.5 h-3.5 ${canAffordUpgrade && !maxed ? 'fill-current' : ''}`} />
+                      {maxed ? 'Max level' : 'Upgrade'}
+                    </span>
+                    {!maxed && <span className="font-mono text-[12px]">${upgradeCost}</span>}
+                  </button>
                 )}
-                
-                {showSpecialization && (
-                   <div className="flex gap-2">
-                      <button
-                        onClick={() => onStartRelocation(tower.id)}
-                        disabled={!canAffordRelocation}
-                        className={`flex-1 py-2 px-3 flex items-center justify-center rounded-lg border transition-all active:scale-95 font-mono text-[9px] uppercase ${
-                          canAffordRelocation 
-                          ? 'bg-white/5 hover:border-accent-amber/40 text-white/40'
-                          : 'bg-white/5 border-white/5 text-white/10 cursor-not-allowed'
-                        }`}
-                      >
-                        Relocate
-                      </button>
-                      <button
-                        onClick={() => onSell(tower.id)}
-                        className="flex-1 py-2 px-3 flex items-center justify-center rounded-lg bg-white/5 hover:border-accent-red/40 text-white/40 transition-all font-mono text-[9px] uppercase"
-                      >
-                        Deconstruct
-                      </button>
-                   </div>
-                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => onStartRelocation(tower.id)}
+                    disabled={!canAffordRelocation}
+                    title={`Move ($${RELOCATION_FEE}) (R)`}
+                    className={`h-8 px-2 flex items-center justify-center gap-1.5 rounded-lg border transition-all active:scale-95 font-display font-semibold uppercase tracking-[0.08em] text-[11px] ${
+                      canAffordRelocation
+                        ? 'bg-white/5 border-white/10 text-white/70 hover:bg-accent-amber/15 hover:border-accent-amber/40 hover:text-accent-amber'
+                        : 'bg-white/5 border-white/5 text-white/30 cursor-not-allowed'
+                    }`}
+                  >
+                    <MoveVertical className="w-3.5 h-3.5" />Move · ${RELOCATION_FEE}
+                  </button>
+                  <button
+                    onClick={() => onSell(tower.id)}
+                    title={`Sell for $${sellValue} (S twice)`}
+                    className="h-8 px-2 flex items-center justify-center gap-1.5 rounded-lg bg-white/5 border border-white/10 text-white/70 hover:bg-accent-red/15 hover:border-accent-red/40 hover:text-accent-red transition-all active:scale-95 font-display font-semibold uppercase tracking-[0.08em] text-[11px]"
+                  >
+                    <Coins className="w-3.5 h-3.5" />Sell · ${sellValue}
+                  </button>
+                </div>
               </div>
             </div>
 

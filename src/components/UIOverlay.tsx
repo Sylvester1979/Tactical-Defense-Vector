@@ -5,7 +5,6 @@ import {
   Pause,
   RotateCcw,
   Zap,
-  Shield,
   CreditCard,
   Activity,
   MoveVertical,
@@ -13,10 +12,16 @@ import {
   Volume2,
   VolumeX,
   HelpCircle,
+  Heart,
+  Keyboard,
 } from 'lucide-react';
 import { TowerModule } from './TowerModule';
 import { CommandDeck } from './CommandDeck';
 import { MODIFIER_HEX, MODIFIER_STYLE } from './uiStyles';
+import { Button } from './ui/Button';
+import { Kbd } from './ui/Kbd';
+import { Modal } from './ui/Modal';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 import { GameState, TowerType, TowerInstance, WaveModifier, TargetingMode } from '../types';
 import { TOWER_STATS, INITIAL_LIVES, WAVES, CANVAS_WIDTH, CANVAS_HEIGHT, RELOCATION_FEE, getWaveConfig } from '../constants';
 
@@ -64,6 +69,36 @@ const CONTROLS: [string, string][] = [
   ['?', 'This help'],
 ];
 
+const ControlsList: React.FC = () => (
+  <div className="space-y-1.5">
+    {CONTROLS.map(([k, v]) => (
+      <div key={k} className="flex items-center justify-between gap-3 text-[12px]">
+        <span className="text-white/65">{v}</span>
+        <Kbd className="shrink-0">{k}</Kbd>
+      </div>
+    ))}
+  </div>
+);
+
+// A wave modifier as a two-line chip: what it is, and what it does
+const ModifierChip: React.FC<{ modifier: WaveModifier; next?: boolean }> = ({ modifier, next }) => {
+  const hex = MODIFIER_HEX[modifier];
+  return (
+    <div
+      className="flex items-center gap-2 h-10 px-3 rounded-lg border whitespace-nowrap"
+      style={{ borderColor: `${hex}55`, backgroundColor: `${hex}12` }}
+    >
+      <Zap className="w-3.5 h-3.5 shrink-0" style={{ color: hex }} />
+      <div className="leading-tight">
+        <div className="font-display font-semibold text-[12px] uppercase tracking-[0.1em]" style={{ color: hex }}>
+          {MODIFIER_STYLE[modifier].label}{next ? ' next' : ''}
+        </div>
+        <div className="text-[10px] font-mono" style={{ color: `${hex}cc` }}>{MODIFIER_STYLE[modifier].desc}</div>
+      </div>
+    </div>
+  );
+};
+
 // How long the wave-start banner stays up
 const WAVE_BANNER_MS = 2600;
 
@@ -99,12 +134,23 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === '?') setShowHelp(v => !v);
-      else if (e.key === 'Escape') setShowHelp(false);
+      else if (e.key === 'Escape' && showHelp) {
+        e.stopImmediatePropagation(); // closing the help is all this Esc does
+        setShowHelp(false);
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [showHelp]);
   const relocatingTower = towers.find(t => t.id === gameState.relocatingTowerId);
+
+  // Restarting throws the run away, so it always asks first
+  const [confirmRestart, setConfirmRestart] = React.useState(false);
+  const restart = () => { setConfirmRestart(false); onRestart(); };
+  // The pause menu is up whenever a wave is paused; closing it resumes
+  const pauseMenu = gameState.isPaused && !gameState.isWaveReady && !gameState.isGameOver;
+  const [pauseControls, setPauseControls] = React.useState(false);
+  React.useEffect(() => { if (!pauseMenu) setPauseControls(false); }, [pauseMenu]);
 
   // --- Responsive arena scaling: grow the fixed-resolution canvas to fill
   //     the available viewport while preserving its 1000×800 aspect ratio. ---
@@ -164,49 +210,6 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
         {/* hairline cyan glow along the bottom edge */}
         <div className="pointer-events-none absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-accent-cyan/20 to-transparent" />
 
-        {/* ── CENTER TITLE ── absolutely centered so side groups never shift it */}
-        <div className="pointer-events-none select-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-4">
-          {/* left decorative rule */}
-          <div className="hidden xl:flex items-center gap-2">
-            <span className="h-px w-12 bg-gradient-to-r from-transparent to-accent-cyan/45" />
-            <span className="w-[7px] h-[7px] rotate-45 bg-accent-cyan/80" style={{ boxShadow: '0 0 10px #00f2ff' }} />
-          </div>
-
-          <div className="flex flex-col items-center leading-none">
-            <h1 className="relative whitespace-nowrap">
-              {/* glow underlay */}
-              <span
-                className="absolute inset-0 text-[23px] font-black italic tracking-[0.17em] text-accent-cyan blur-[10px] opacity-60"
-                aria-hidden
-              >
-                TACTICAL DEFENSE VECTOR
-              </span>
-              {/* chrome→cyan gradient face */}
-              <span
-                className="relative text-[23px] font-black italic tracking-[0.17em]"
-                style={{
-                  background: 'linear-gradient(180deg, #ffffff 0%, #d4f7ff 42%, #4fe3ff 72%, #00c8df 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                  filter: 'drop-shadow(0 1px 0 rgba(0,0,0,0.5)) drop-shadow(0 0 16px rgba(0,242,255,0.35))',
-                }}
-              >
-                TACTICAL DEFENSE VECTOR
-              </span>
-            </h1>
-            <span className="text-[7px] tracking-[0.62em] uppercase text-accent-cyan/45 font-mono mt-[5px] pl-[0.62em]">
-              Aegis Defense Matrix
-            </span>
-          </div>
-
-          {/* right decorative rule */}
-          <div className="hidden xl:flex items-center gap-2">
-            <span className="w-[7px] h-[7px] rotate-45 bg-accent-cyan/80" style={{ boxShadow: '0 0 10px #00f2ff' }} />
-            <span className="h-px w-12 bg-gradient-to-l from-transparent to-accent-cyan/45" />
-          </div>
-        </div>
-
         {/* ── STAT PILLS (left) ── */}
         <div className="flex items-stretch gap-2 shrink-0">
 
@@ -214,7 +217,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           <div className="flex items-center gap-2.5 px-3.5 rounded-xl bg-white/[0.04] border border-white/[0.06]">
             <CreditCard className="w-3.5 h-3.5 text-accent-cyan/55 shrink-0" />
             <div>
-              <div className="text-[7px] uppercase tracking-widest text-white/28 font-mono leading-none">Credits</div>
+              <div className="text-[10px] uppercase tracking-[0.14em] text-white/50 font-display font-semibold leading-none">Credits</div>
               <div
                 className="text-[17px] font-black font-mono text-accent-cyan tabular-nums leading-tight mt-0.5"
                 style={{ textShadow: '0 0 16px rgba(0,242,255,0.55)' }}
@@ -224,17 +227,17 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             </div>
           </div>
 
-          {/* Core Integrity */}
+          {/* Lives */}
           {(() => {
             const col = gameState.lives > 10 ? '#00f2ff' : gameState.lives > 5 ? '#ffb800' : '#ff4d4d';
             const pct = (gameState.lives / INITIAL_LIVES) * 100;
             return (
               <div className="flex items-center gap-2.5 px-3.5 rounded-xl bg-white/[0.04] border border-white/[0.06]">
-                <Shield className="w-3.5 h-3.5 shrink-0" style={{ color: col, filter: `drop-shadow(0 0 4px ${col}80)` }} />
+                <Heart className="w-3.5 h-3.5 shrink-0" style={{ color: col, filter: `drop-shadow(0 0 4px ${col}80)` }} />
                 <div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[7px] uppercase tracking-widest text-white/28 font-mono leading-none">Integrity</span>
-                    <span className="text-[11px] font-black font-mono tabular-nums leading-none" style={{ color: col }}>{gameState.lives}</span>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-white/50 font-display font-semibold leading-none">Lives</span>
+                    <span className="text-[13px] font-bold font-mono tabular-nums leading-none" style={{ color: col }}>{gameState.lives}</span>
                   </div>
                   <div className="mt-1.5 w-24 h-[4px] rounded-full bg-white/[0.08] overflow-hidden">
                     <div
@@ -252,15 +255,15 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             <Activity className="w-3.5 h-3.5 text-accent-amber/55 shrink-0" />
             <div>
               <div className="flex items-baseline gap-2">
-                <span className="text-[7px] uppercase tracking-widest text-white/28 font-mono leading-none">Wave</span>
-                <span className="text-[11px] font-black font-mono text-accent-amber tabular-nums leading-none">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-white/50 font-display font-semibold leading-none">Wave</span>
+                <span className="text-[13px] font-bold font-mono text-accent-amber tabular-nums leading-none">
                   {gameState.waveNumber.toString().padStart(2, '0')}
                   {/* Past the scripted waves the run goes on endlessly */}
-                  <span className="text-white/20 text-[9px]">{gameState.waveNumber <= WAVES.length ? `/${WAVES.length}` : ' ENDLESS'}</span>
+                  <span className="text-white/45 text-[11px]">{gameState.waveNumber <= WAVES.length ? `/${WAVES.length}` : ' endless'}</span>
                 </span>
                 {bestWaves > 0 && (
                   <span
-                    className={`text-[8px] font-mono uppercase tracking-wider leading-none tabular-nums ${newRecord ? 'text-emerald-400' : 'text-white/30'}`}
+                    className={`text-[10px] font-mono uppercase tracking-wider leading-none tabular-nums ${newRecord ? 'text-emerald-400' : 'text-white/50'}`}
                     title="Most waves cleared in a single run"
                   >
                     Best {bestWaves.toString().padStart(2, '0')}
@@ -280,27 +283,53 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             </div>
           </div>
 
-          {/* Threat Modifier — only when active */}
-          {gameState.currentWaveModifier !== WaveModifier.NONE && (() => {
-            const m = MODIFIER_STYLE[gameState.currentWaveModifier];
-            const hex = MODIFIER_HEX[gameState.currentWaveModifier];
-            return (
-              <div
-                className="flex items-center gap-2 px-3.5 rounded-xl border"
-                style={{ borderColor: `${hex}45`, backgroundColor: `${hex}10`, boxShadow: `0 0 16px ${hex}20` }}
-              >
-                <Zap className="w-3.5 h-3.5 shrink-0 animate-pulse" style={{ color: hex }} />
-                <div>
-                  <div className="text-[7px] uppercase tracking-widest text-white/28 font-mono leading-none">Threat</div>
-                  <div className="text-[11px] font-black font-mono leading-tight mt-0.5" style={{ color: hex, textShadow: `0 0 10px ${hex}` }}>{m.label}</div>
-                </div>
-              </div>
-            );
-          })()}
         </div>{/* end stat pills */}
 
-        {/* push controls to far right */}
-        <div className="flex-1" />
+        {/* ── WAVE CONTROL ── the one place to start a wave and follow it */}
+        <div className="flex-1 min-w-0 flex justify-center">
+          {!gameState.isGameOver && (gameState.isWaveReady ? (() => {
+            const next = gameState.waveNumber + 1;
+            const mod = getWaveConfig(next).modifier;
+            return (
+              <div className="flex items-center gap-3">
+                {gameState.waveNumber > 0 && (
+                  <div className="flex flex-col items-end leading-tight">
+                    <span className="font-display font-semibold text-[13px] text-white/80 whitespace-nowrap">Wave {gameState.waveNumber} cleared</span>
+                    {newRecord && gameState.waveNumber === bestWaves && (
+                      <span className="text-[10px] font-display font-semibold uppercase tracking-[0.12em] text-emerald-300 whitespace-nowrap">★ New record</span>
+                    )}
+                  </div>
+                )}
+                {mod !== WaveModifier.NONE && <ModifierChip modifier={mod} next />}
+                <Button variant="primary" onClick={onStartWave} disabled={!assetsReady} title="Start wave (Space)">
+                  <Zap className="w-4 h-4 fill-current" />
+                  {assetsReady ? `Start wave ${next}` : 'Loading assets…'}
+                  {assetsReady && <Kbd tone="dark">Space</Kbd>}
+                </Button>
+              </div>
+            );
+          })() : (() => {
+            const cfg = getWaveConfig(gameState.waveNumber);
+            const left = waveRemaining ? Object.values(waveRemaining).reduce((a, b) => a + b, 0) : cfg.count;
+            return (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 h-10 px-3.5 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+                  <span className="font-display font-semibold text-[14px] text-white whitespace-nowrap">Wave {gameState.waveNumber}</span>
+                  <div className="w-32 h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+                    <div className="h-full rounded-full bg-accent-red/85 transition-all duration-300" style={{ width: `${(1 - left / cfg.count) * 100}%` }} />
+                  </div>
+                  <span className="font-mono text-[12px] tabular-nums text-white/70 whitespace-nowrap">{left} left</span>
+                </div>
+                {cfg.modifier !== WaveModifier.NONE && <ModifierChip modifier={cfg.modifier} />}
+                {gameState.isPaused && (
+                  <span className="h-7 px-2.5 flex items-center rounded-md border border-accent-amber/45 bg-accent-amber/15 text-accent-amber font-display font-semibold text-[12px] uppercase tracking-[0.12em]">
+                    Paused
+                  </span>
+                )}
+              </div>
+            );
+          })())}
+        </div>
 
         {/* ── CONTROLS ── */}
         <div className="flex items-center gap-2 shrink-0">
@@ -356,14 +385,9 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               <>
                 <div className="fixed inset-0 z-[90]" onClick={() => setShowHelp(false)} />
                 <div className="absolute right-0 top-full mt-2 z-[100] w-72 rounded-xl border border-white/[0.1] bg-[#11151b]/95 backdrop-blur-xl shadow-[0_18px_50px_-12px_rgba(0,0,0,0.9)] overflow-hidden">
-                  <div className="px-3.5 py-2.5 border-b border-white/[0.06] text-[10px] font-black uppercase tracking-[0.18em] text-white/75 font-mono">Controls</div>
-                  <div className="px-3.5 py-2.5 space-y-1.5">
-                    {CONTROLS.map(([k, v]) => (
-                      <div key={k} className="flex items-center justify-between gap-3 text-[10px] font-mono">
-                        <span className="text-white/55">{v}</span>
-                        <kbd className="shrink-0 px-1.5 py-0.5 rounded border border-white/15 bg-white/[0.05] text-[9px] font-bold text-white/75">{k}</kbd>
-                      </div>
-                    ))}
+                  <div className="px-3.5 py-2.5 border-b border-white/[0.06] font-display font-semibold text-[12px] uppercase tracking-[0.16em] text-white/80">Controls</div>
+                  <div className="px-3.5 py-3">
+                    <ControlsList />
                   </div>
                 </div>
               </>
@@ -372,41 +396,13 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 
           {/* Restart */}
           <button
-            onClick={onRestart}
-            title="Restart"
+            onClick={() => setConfirmRestart(true)}
+            title="Restart run"
             className="w-9 h-9 rounded-xl flex items-center justify-center border border-white/[0.08] bg-white/[0.04] hover:bg-accent-red/12 hover:border-accent-red/35 transition-all group"
           >
             <RotateCcw className="w-4 h-4 text-white/45 group-hover:text-accent-red transition-colors" />
           </button>
 
-          {/* Deploy CTA */}
-          <button
-            onClick={onStartWave}
-            title="Start wave (Space)"
-            disabled={gameState.isGameOver || !gameState.isWaveReady || !assetsReady}
-            className="relative h-9 pl-4 pr-5 rounded-xl font-black text-[11px] uppercase tracking-[0.14em] font-mono flex items-center gap-2 overflow-hidden transition-all disabled:opacity-35 disabled:cursor-not-allowed"
-            style={gameState.isWaveReady && !gameState.isGameOver ? {
-              background: 'linear-gradient(135deg, #ffb800 0%, #ff9200 100%)',
-              color: '#0d0f13',
-              boxShadow: '0 0 22px rgba(255,184,0,0.5), inset 0 1px 0 rgba(255,255,255,0.28)',
-            } : {
-              background: 'rgba(255,184,0,0.07)',
-              color: 'rgba(255,184,0,0.4)',
-              border: '1px solid rgba(255,184,0,0.18)',
-            }}
-          >
-            {/* shimmer sweep while ready */}
-            {gameState.isWaveReady && !gameState.isGameOver && (
-              <span
-                className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent"
-                style={{ animation: 'shimmer 2.4s ease-in-out infinite' }}
-              />
-            )}
-            <Zap className="w-3.5 h-3.5 relative z-10 shrink-0" />
-            <span className="relative z-10 whitespace-nowrap">
-              {gameState.isWaveReady ? `Wave ${gameState.waveNumber + 1}` : 'Active'}
-            </span>
-          </button>
         </div>
       </header>
 
@@ -501,9 +497,9 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                       style={{ borderColor: `${accent}66`, boxShadow: `0 0 40px ${accent}22` }}
                     >
                       <span className="text-[10px] font-mono uppercase tracking-[0.5em]" style={{ color: `${accent}cc` }}>
-                        Incoming · {waveBanner.count} {waveBanner.count === 1 ? 'hostile' : 'hostiles'}
+                        Incoming · {waveBanner.count} {waveBanner.count === 1 ? 'enemy' : 'enemies'}
                       </span>
-                      <span className="text-4xl font-black italic tracking-tighter text-white leading-tight">
+                      <span className="font-display font-bold text-4xl tracking-[0.06em] text-white leading-tight">
                         WAVE {waveBanner.wave}
                       </span>
                       {mod !== WaveModifier.NONE && (
@@ -522,56 +518,6 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               })()}
             </AnimatePresence>
 
-            {/* Wave cleared: a compact card along the top edge, so the field stays visible while building */}
-            <AnimatePresence>
-              {gameState.isWaveReady && !gameState.isGameOver && gameState.waveNumber > 0 && (() => {
-                const mod = getWaveConfig(gameState.waveNumber + 1).modifier;
-                return (
-                  <motion.div
-                    key="wave-cleared"
-                    className="absolute inset-x-0 top-3 flex justify-center pointer-events-none z-[60]"
-                    initial={{ opacity: 0, y: -14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -14 }}
-                    transition={{ duration: 0.3, ease: 'easeOut' }}
-                  >
-                    <div className="pointer-events-auto flex items-center gap-5 pl-5 pr-2.5 py-2.5 bg-[#0d1117]/85 backdrop-blur-md border border-accent-amber/50 rounded-lg shadow-[0_0_40px_rgba(255,191,0,0.12)] whitespace-nowrap">
-                      <div className="flex flex-col">
-                        <span className="text-[9px] uppercase tracking-[0.45em] text-accent-amber font-black">Aegis Matrix Stable</span>
-                        <span className="text-2xl font-black text-white italic tracking-tighter leading-none mt-1">
-                          WAVE {gameState.waveNumber} CLEARED
-                        </span>
-                      </div>
-                      {newRecord && gameState.waveNumber === bestWaves && (
-                        <span className="px-2.5 py-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 text-[9px] font-black font-mono uppercase tracking-[0.25em]">
-                          ★ New record
-                        </span>
-                      )}
-                      {mod !== WaveModifier.NONE && (
-                        <div className={`px-3 py-1 border rounded-md flex flex-col items-center leading-tight ${
-                          mod === WaveModifier.RUSH  ? 'border-accent-amber/40 bg-accent-amber/5' :
-                          mod === WaveModifier.SWARM ? 'border-accent-red/40 bg-accent-red/5' :
-                          'border-purple-400/40 bg-purple-400/5'
-                        }`}>
-                          <span className={`text-[10px] font-black uppercase tracking-widest ${MODIFIER_STYLE[mod].color}`}>⚠ {MODIFIER_STYLE[mod].label} incoming</span>
-                          <span className={`text-[9px] font-mono ${MODIFIER_STYLE[mod].color} opacity-70`}>{MODIFIER_STYLE[mod].desc}</span>
-                        </div>
-                      )}
-                      <button
-                        onClick={onStartWave}
-                        disabled={!assetsReady}
-                        className="px-5 py-2.5 bg-accent-amber text-dark-bg font-black uppercase tracking-widest text-sm hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 rounded-md disabled:opacity-40 disabled:cursor-wait disabled:active:scale-100"
-                      >
-                        <Zap className="w-4 h-4 fill-current" />
-                        {assetsReady ? `Initiate Wave ${gameState.waveNumber + 1}` : 'Loading assets…'}
-                        <kbd className="ml-1 px-1.5 py-0.5 rounded border border-dark-bg/30 text-[9px] font-mono font-bold opacity-70">SPACE</kbd>
-                      </button>
-                    </div>
-                  </motion.div>
-                );
-              })()}
-            </AnimatePresence>
-
             {/* Placement / relocation hint: a corner strip, so the whole field stays clickable */}
             {(placingType || relocatingTower) && (() => {
               const relocating = !!relocatingTower;
@@ -584,7 +530,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                   {relocating ? <MoveVertical className="w-3.5 h-3.5 animate-pulse" /> : <Crosshair className="w-3.5 h-3.5 animate-pulse" />}
                   <span>
                     {relocating
-                      ? <>Relocating {TOWER_STATS[relocatingTower!.type].name} · ${RELOCATION_FEE} · click a free spot</>
+                      ? <>Moving {TOWER_STATS[relocatingTower!.type].name} · ${RELOCATION_FEE} · click a free spot</>
                       : <>Placing {TOWER_STATS[placingType!].name} · click a free spot</>}
                   </span>
                   <button
@@ -610,40 +556,72 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
       </main>
 
       {/* OVERLAYS */}
+      <ConfirmDialog
+        open={confirmRestart}
+        title="Abandon this run?"
+        body={`Wave ${gameState.waveNumber} progress and your towers will be lost.`}
+        confirmLabel="Restart run"
+        danger
+        onConfirm={restart}
+        onCancel={() => setConfirmRestart(false)}
+      />
+
+      <Modal open={pauseMenu} onClose={onPauseToggle} title="Paused" width={360} passKeys={['p']}>
+        <p className="text-[13px] text-white/55">Wave {gameState.waveNumber} is on hold.</p>
+        <div className="mt-5 flex flex-col gap-2.5">
+          <Button variant="primary" size="lg" onClick={onPauseToggle} className="justify-between">
+            <span className="flex items-center gap-2.5"><Play className="w-4 h-4 fill-current" />Resume</span>
+            <span className="flex gap-1"><Kbd tone="dark">P</Kbd><Kbd tone="dark">Esc</Kbd></span>
+          </Button>
+          <Button variant="secondary" size="lg" onClick={() => setPauseControls(v => !v)} className="justify-start gap-2.5">
+            <Keyboard className="w-4 h-4" />Controls
+          </Button>
+          {pauseControls && (
+            <div className="rounded-xl border border-white/[0.08] bg-black/25 px-4 py-3">
+              <ControlsList />
+            </div>
+          )}
+          <Button variant="secondary" size="lg" onClick={() => setConfirmRestart(true)} className="justify-start gap-2.5 hover:!text-accent-red hover:!border-accent-red/40">
+            <RotateCcw className="w-4 h-4" />Restart run
+          </Button>
+        </div>
+      </Modal>
+
       <AnimatePresence>
         {gameState.isGameOver && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="absolute inset-0 bg-dark-bg/95 flex flex-col items-center justify-center z-[1000] border-4 border-accent-red m-10"
+            className="fixed inset-0 z-[1000] flex items-center justify-center bg-[#05070b]/80 backdrop-blur-md"
           >
-            <div className="absolute top-0 left-0 w-full p-4 border-b border-accent-red flex justify-between uppercase font-mono text-[10px] tracking-widest text-accent-red/50">
-               <span>System Failure</span>
-               <span>Fatal Error : 0xDEADBEEF</span>
-            </div>
-            <motion.h2 
-              initial={{ scale: 0.9, y: 20 }}
+            <motion.div
+              initial={{ scale: 0.94, y: 16 }}
               animate={{ scale: 1, y: 0 }}
-              className="text-8xl font-black mb-2 text-accent-red tracking-tighter italic"
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className="relative w-[460px] rounded-2xl border border-accent-red/30 bg-[#11151b]/95 px-10 py-9 text-center shadow-[0_30px_90px_-20px_rgba(255,77,77,0.35)] overflow-hidden"
             >
-              BREACHED
-            </motion.h2>
-            <div className="w-[400px] h-[1px] bg-accent-red/30 mb-8" />
-            <p className="text-text-secondary font-mono mb-12 uppercase tracking-[0.2em] text-sm">
-               Waves survived: {Math.max(0, gameState.waveNumber - 1)} · Best: {bestWaves}
-            </p>
-            {newRecord && (
-              <span className="-mt-8 mb-10 px-4 py-1.5 rounded-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 text-xs font-black font-mono uppercase tracking-[0.3em]">
-                ★ New record
-              </span>
-            )}
-            <button 
-              onClick={onRestart}
-              className="group relative px-12 py-4 bg-accent-red text-dark-bg font-black uppercase tracking-widest text-xl hover:bg-accent-red/90 transition-all flex items-center gap-3"
-            >
-              Reboot Aegis
-              <RotateCcw className="w-6 h-6 group-hover:rotate-180 transition-transform duration-500" />
-            </button>
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent-red/70 to-transparent" />
+              <div className="font-display font-semibold text-[12px] uppercase tracking-[0.3em] text-accent-red">Game over</div>
+              <h2 className="mt-2 font-display font-bold text-[40px] leading-none tracking-[0.02em] text-white">Defense breached</h2>
+              <div className="mt-7 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-black/30 border border-white/[0.06] py-3">
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-white/50 font-display font-semibold">Waves survived</div>
+                  <div className="mt-1 font-mono font-bold text-[26px] text-white tabular-nums">{Math.max(0, gameState.waveNumber - 1)}</div>
+                </div>
+                <div className="rounded-xl bg-black/30 border border-white/[0.06] py-3">
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-white/50 font-display font-semibold">Best</div>
+                  <div className="mt-1 font-mono font-bold text-[26px] text-white tabular-nums">{bestWaves}</div>
+                </div>
+              </div>
+              {newRecord && (
+                <div className="mt-4 inline-flex px-3.5 py-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 text-[12px] font-display font-semibold uppercase tracking-[0.2em]">
+                  ★ New record
+                </div>
+              )}
+              <Button variant="primary" size="lg" onClick={onRestart} className="mt-7 w-full">
+                <RotateCcw className="w-4 h-4" />Play again
+              </Button>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

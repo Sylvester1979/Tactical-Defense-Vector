@@ -14,7 +14,7 @@ export const MODIFIER_STYLE: Record<WaveModifier, { label: string; color: string
   [WaveModifier.NONE]:  { label: '',      color: '',                desc: '' },
   [WaveModifier.RUSH]:  { label: 'RUSH',  color: 'text-accent-amber', desc: '1.6× SPEED' },
   [WaveModifier.SWARM]: { label: 'SWARM', color: 'text-accent-red',   desc: '2× COUNT / ½ HP' },
-  [WaveModifier.ELITE]: { label: 'ELITE', color: 'text-purple-400',   desc: '½ COUNT / 2× HP / 1.5× ₢' },
+  [WaveModifier.ELITE]: { label: 'ELITE', color: 'text-purple-400',   desc: '½ COUNT / 2× HP / 1.5× CREDITS' },
 };
 
 export const MODIFIER_HEX: Record<WaveModifier, string> = {
